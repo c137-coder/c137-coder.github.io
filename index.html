@@ -15,6 +15,32 @@
     --text: #e6e0ff;
     --muted: #aaa3c8;
   }
+  :root { --board-bg: #17142a; --rain: rgba(200, 185, 255, 0.35); }
+  :root[data-theme="light"] {
+    --bg1: #f4f1ff; --bg2: #ddd3ff;
+    --card: rgba(255, 255, 255, 0.72); --card-border: rgba(109, 79, 214, 0.25);
+    --accent: #6d4fd6; --accent2: #8a6fe0; --text: #241c45; --muted: #5b5480;
+    --board-bg: #ece6ff; --rain: rgba(109, 79, 214, 0.25);
+  }
+  .theme-btn, .lofi {
+    position: fixed; z-index: 5; border: 1px solid var(--card-border); background: var(--card);
+    backdrop-filter: blur(12px); color: var(--text); border-radius: 999px;
+  }
+  .theme-btn { top: 16px; right: 16px; width: 44px; height: 44px; font-size: 20px; cursor: pointer; }
+  .lofi { left: 16px; bottom: 16px; display: flex; align-items: center; gap: 10px; padding: 6px 14px 6px 6px; font-size: 14px; }
+  .lofi button {
+    width: 34px; height: 34px; border-radius: 50%; border: 0; cursor: pointer; font-size: 14px;
+    color: #17142a; background: linear-gradient(135deg, var(--accent), var(--accent2));
+  }
+  .lofi small { display: block; color: var(--muted); font-size: 11px; }
+  section.extra { margin-top: 48px; }
+  .snake-wrap { display: flex; flex-wrap: wrap; gap: 24px; align-items: center; justify-content: center; }
+  #snake { width: min(400px, 88vw); aspect-ratio: 1; border-radius: 12px; outline: none; box-shadow: 0 8px 30px rgba(0,0,0,.3); cursor: pointer; }
+  #snake:focus { box-shadow: 0 0 0 3px var(--accent), 0 8px 30px rgba(0,0,0,.3); }
+  .snake-side p { color: var(--muted); }
+  .snake-side .big { font-size: 28px; font-weight: 700; color: var(--text); }
+  .guest-note { color: var(--muted); font-size: 14px; margin: 0 0 14px; }
+
   * { box-sizing: border-box; }
   html, body { margin: 0; min-height: 100%; }
   body {
@@ -123,6 +149,8 @@
 </head>
 <body>
 <canvas id="rain"></canvas>
+<button class="theme-btn" id="theme-btn" title="Светлая / тёмная тема">🌙</button>
+<div class="lofi"><button id="lofi-btn" title="Лоу-фай радио">▶</button><div><span id="lofi-label">Лоу-фай радио</span><small>музыка сочиняется на ходу</small></div></div>
 <main>
   <header>
     <div class="avatar">♞</div>
@@ -226,6 +254,27 @@
     </div>
   </section>
 
+  <section class="extra">
+    <h2 class="section-title">Мини-игра: Змейка</h2>
+    <div class="card snake-wrap">
+      <canvas id="snake" width="400" height="400" tabindex="0"></canvas>
+      <div class="snake-side">
+        <p>Счёт</p><div class="big" id="snake-score">0</div>
+        <p>Твой рекорд</p><div class="big" id="snake-best">0</div>
+        <p>Стрелки или WASD, на телефоне — свайпы.</p>
+        <div class="pz-btns"><button id="snake-start">▶ Играть</button></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="extra">
+    <h2 class="section-title">Гостевая книга</h2>
+    <div class="card">
+      <p class="guest-note">Оставь сообщение! Чтобы написать, нужно войти через GitHub.</p>
+      <div class="giscus"></div>
+    </div>
+  </section>
+
   <div class="links">
     <a class="btn" href="https://steamcommunity.com/profiles/76561199405354344" target="_blank" rel="noopener">
       <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="12" cy="12" r="10" opacity=".25"/><circle cx="15.5" cy="9" r="3"/><circle cx="8.5" cy="15" r="2.2"/><path d="M8.5 15 15.5 9" stroke="currentColor" stroke-width="2"/></svg>
@@ -255,7 +304,7 @@
   }
   function tick() {
     ctx.clearRect(0, 0, c.width, c.height);
-    ctx.strokeStyle = 'rgba(200, 185, 255, 0.35)';
+    ctx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--rain');
     ctx.lineWidth = 1;
     for (const d of drops) {
       ctx.beginPath();
@@ -330,6 +379,31 @@
   document.getElementById('pz-reset').onclick = load;
   document.getElementById('pz-next').onclick = () => { idx = (idx + 1) % PUZZLES.length; load(); };
   load();
+</script>
+<script src="snake.js"></script>
+<script src="lofi.js"></script>
+<script>
+  (() => {
+    const btn = document.getElementById('theme-btn'), root = document.documentElement;
+    const giscusTheme = t => t === 'light' ? 'light' : 'transparent_dark';
+    function apply(t) {
+      if (t === 'light') root.setAttribute('data-theme', 'light'); else root.removeAttribute('data-theme');
+      btn.textContent = t === 'light' ? '☀️' : '🌙';
+      const f = document.querySelector('iframe.giscus-frame');
+      if (f) f.contentWindow.postMessage({ giscus: { setConfig: { theme: giscusTheme(t) } } }, 'https://giscus.app');
+    }
+    let theme = 'dark';
+    try { theme = localStorage.getItem('theme') || 'dark'; } catch (e) {}
+    apply(theme);
+    btn.onclick = () => { theme = theme === 'light' ? 'dark' : 'light'; try { localStorage.setItem('theme', theme); } catch (e) {} apply(theme); };
+    const g = document.createElement('script');
+    g.src = 'https://giscus.app/client.js'; g.async = true; g.crossOrigin = 'anonymous';
+    Object.entries({ repo: 'c137-coder/c137-coder.github.io', 'repo-id': 'R_kgDOVCzZEg', category: 'General',
+      'category-id': 'DIC_kwDOVCzZEs4DHcVQ', mapping: 'specific', term: 'Гостевая книга', strict: '0',
+      'reactions-enabled': '1', 'emit-metadata': '0', 'input-position': 'top', theme: giscusTheme(theme),
+      lang: 'ru', loading: 'lazy' }).forEach(([k, v]) => g.setAttribute('data-' + k, v));
+    document.querySelector('.giscus').appendChild(g);
+  })();
 </script>
 </body>
 </html>
