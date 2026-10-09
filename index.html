@@ -91,6 +91,31 @@
   .btn:hover { transform: translateY(-2px); box-shadow: 0 10px 30px rgba(138, 111, 224, 0.55); }
   .btn svg { width: 22px; height: 22px; }
 
+
+  section.puzzle { margin-top: 48px; }
+  .puzzle .card { display: flex; flex-wrap: wrap; gap: 24px; align-items: center; justify-content: center; }
+  .board {
+    display: grid; grid-template-columns: repeat(8, 1fr); grid-template-rows: repeat(8, 1fr); width: min(400px, 88vw); aspect-ratio: 1;
+    border-radius: 10px; overflow: hidden; box-shadow: 0 8px 30px rgba(0,0,0,.35); user-select: none;
+  }
+  .sq { aspect-ratio: 1; display: grid; place-items: center; font-size: min(40px, 8.5vw); line-height: 1; cursor: pointer; position: relative; }
+  .sq.l { background: #d9ccff; } .sq.d { background: #8a6fe0; }
+  .sq.sel { box-shadow: inset 0 0 0 4px #ffd166; }
+  .sq.hint { box-shadow: inset 0 0 0 4px #4ade80; }
+  .sq.dot::after { content: ''; width: 26%; height: 26%; border-radius: 50%; background: rgba(23,20,42,.35); position: absolute; }
+  .pc-w { color: #fff; text-shadow: 0 0 2px #17142a, 0 1px 2px #17142a, 0 0 1px #17142a; }
+  .pc-b { color: #17142a; text-shadow: 0 0 1px #e6e0ff; }
+  .pz-side { max-width: 280px; }
+  .pz-side h2 { margin-top: 0; }
+  .pz-status { margin: 12px 0; min-height: 48px; color: var(--text); font-weight: 600; }
+  .pz-status.ok { color: #4ade80; } .pz-status.bad { color: #ffb4b4; }
+  .pz-btns { display: flex; gap: 8px; flex-wrap: wrap; }
+  .pz-btns button {
+    font: inherit; font-size: 14px; padding: 8px 14px; border-radius: 10px; cursor: pointer;
+    background: rgba(169,144,245,.15); color: var(--text); border: 1px solid var(--card-border);
+  }
+  .pz-btns button:hover { background: rgba(169,144,245,.3); }
+
   footer { text-align: center; color: var(--muted); font-size: 14px; margin-top: 48px; }
 </style>
 </head>
@@ -130,6 +155,24 @@
     <div class="card">
       <h2>Обо мне</h2>
       <p>Привет! Я Лев. Мне нравится, когда надо подумать: в шахматах, в олимпиадных задачах и в коде. Эта страничка — тоже мой проект.</p>
+    </div>
+  </section>
+
+
+  <section class="puzzle">
+    <h2 class="section-title">Шахматная задачка дня</h2>
+    <div class="card">
+      <div class="board" id="board"></div>
+      <div class="pz-side">
+        <h2 id="pz-title">Мат в 1 ход</h2>
+        <p id="pz-turn"></p>
+        <div class="pz-status" id="pz-status">Найди ход, который ставит мат. Нажми на фигуру, потом на клетку.</div>
+        <div class="pz-btns">
+          <button id="pz-hint">💡 Подсказка</button>
+          <button id="pz-reset">↺ Заново</button>
+          <button id="pz-next">Ещё задачка →</button>
+        </div>
+      </div>
     </div>
   </section>
 
@@ -212,6 +255,67 @@
   }
   addEventListener('resize', resize);
   resize(); tick();
+</script>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
+<script>
+  const PUZZLES = [{"title": "Мат по последней горизонтали", "fen": "6k1/5ppp/8/8/8/8/5PPP/R5K1 w - - 0 1", "solution": "Ra8#"}, {"title": "Спёртый мат", "fen": "6rk/6pp/8/4N3/8/8/8/6K1 w - - 0 1", "solution": "Nf7#"}, {"title": "Чёрные начинают: мат по горизонтали", "fen": "r5k1/5ppp/8/8/8/8/5PPP/6K1 b - - 0 1", "solution": "Ra1#"}, {"title": "Две ладьи", "fen": "7k/R7/1R6/8/8/8/8/6K1 w - - 0 1", "solution": "Rb8#"}, {"title": "Арабский мат", "fen": "7k/8/5N2/8/8/8/8/6RK w - - 0 1", "solution": "Rg8#"}, {"title": "Ферзь и слон", "fen": "6k1/5p1p/6pQ/8/3B4/8/8/6K1 w - - 0 1", "solution": "Qg7#"}, {"title": "Мат Анастасии", "fen": "8/4N1pk/8/8/8/8/R7/6K1 w - - 0 1", "solution": "Rh2#"}, {"title": "Чёрные начинают: ферзь на первую", "fen": "4q1k1/5ppp/8/8/8/8/6PP/7K b - - 0 1", "solution": "Qe1#"}];
+  const GLYPH = { k:'♚', q:'♛', r:'♜', b:'♝', n:'♞', p:'♟' };
+  const boardEl = document.getElementById('board');
+  const statusEl = document.getElementById('pz-status');
+  const day = Math.floor((Date.now() - new Date().getTimezoneOffset() * 60000) / 86400000);
+  let idx = day % PUZZLES.length, game, sel = null, solved = false, hintSq = null;
+
+  function load() {
+    const pz = PUZZLES[idx];
+    game = new Chess(pz.fen); sel = null; solved = false; hintSq = null;
+    document.getElementById('pz-title').textContent = pz.title;
+    document.getElementById('pz-turn').textContent = game.turn() === 'w' ? 'Ходят белые. Мат в 1 ход.' : 'Ходят чёрные. Мат в 1 ход.';
+    setStatus('Найди ход, который ставит мат. Нажми на фигуру, потом на клетку.', '');
+    draw();
+  }
+  function setStatus(t, cls) { statusEl.textContent = t; statusEl.className = 'pz-status ' + cls; }
+  function squares() {
+    const files = 'abcdefgh', flip = game.turn() === 'b', out = [];
+    for (let r = 0; r < 8; r++) for (let f = 0; f < 8; f++) {
+      const rank = flip ? r + 1 : 8 - r, file = flip ? files[7 - f] : files[f];
+      out.push({ sq: file + rank, light: (files.indexOf(file) + rank) % 2 === 1 });
+    }
+    return out;
+  }
+  function draw() {
+    const targets = sel ? game.moves({ square: sel, verbose: true }).map(m => m.to) : [];
+    boardEl.innerHTML = '';
+    for (const { sq, light } of squares()) {
+      const d = document.createElement('div');
+      d.className = 'sq ' + (light ? 'l' : 'd') + (sq === sel ? ' sel' : '') + (sq === hintSq ? ' hint' : '') + (targets.includes(sq) ? ' dot' : '');
+      const pc = game.get(sq);
+      if (pc) { d.textContent = GLYPH[pc.type]; d.classList.add(pc.color === 'w' ? 'pc-w' : 'pc-b'); }
+      d.onclick = () => click(sq);
+      boardEl.appendChild(d);
+    }
+  }
+  function click(sq) {
+    if (solved) return;
+    const pc = game.get(sq);
+    if (sel && sel !== sq) {
+      const mv = game.move({ from: sel, to: sq, promotion: 'q' });
+      if (mv) {
+        if (game.in_checkmate()) { solved = true; sel = null; hintSq = null; draw(); setStatus('🎉 Мат! ' + mv.san + ' — правильно!', 'ok'); return; }
+        game.undo(); sel = null; draw(); setStatus('Ход ' + mv.san + ' не ставит мат. Попробуй ещё!', 'bad'); return;
+      }
+    }
+    sel = (pc && pc.color === game.turn() && sel !== sq) ? sq : null;
+    draw();
+  }
+  document.getElementById('pz-hint').onclick = () => {
+    if (solved) return;
+    const mv = game.move(PUZZLES[idx].solution); game.undo();
+    hintSq = mv.from; draw(); setStatus('Подсказка: ходить нужно подсвеченной фигурой.', '');
+  };
+  document.getElementById('pz-reset').onclick = load;
+  document.getElementById('pz-next').onclick = () => { idx = (idx + 1) % PUZZLES.length; load(); };
+  load();
 </script>
 </body>
 </html>
