@@ -75,6 +75,7 @@
     transition: transform .2s, box-shadow .2s;
   }
   .dl:hover { transform: translateY(-2px); box-shadow: 0 8px 22px rgba(138, 111, 224, 0.45); }
+  .dl.play { background: linear-gradient(135deg, #e6e0ff, var(--accent)); }
   .dl small { display: block; font-weight: 400; font-size: 12px; opacity: .75; }
   .hint { font-size: 12px; color: var(--muted); text-align: center; }
   .project .repo:hover { text-decoration: underline; }
@@ -150,6 +151,16 @@
       <h2>Игры</h2>
       <p>Играю на компе. Нравятся игры, где надо строить, выживать и решать головоломки.</p>
     </div>
+    <div class="card">
+      <div class="icon">🎧</div>
+      <h2>Музыка</h2>
+      <p>Слушаю «Сатана Печёт Блины» и Nutakoe. Сейчас слушаю альбом «Сны и воспоминания».</p>
+    </div>
+    <div class="card">
+      <div class="icon">📺</div>
+      <h2>Аниме</h2>
+      <p>Смотрю «Атаку титанов» и «Человека-бензопилу».</p>
+    </div>
   </div>
 
   <section class="about">
@@ -196,6 +207,7 @@
         <p>Игра, где в гараже собираешь «пятёрку» с нуля: ставишь детали, крутишь болты трещоткой, заливаешь жидкости и выезжаешь на тест-драйв. На магнитофоне играет музыка, которую игра сочиняет сама.</p>
         <div class="tags"><span class="tag">Unity</span><span class="tag">C#</span><span class="tag">Яндекс Игры</span></div>
         <div class="actions">
+          <a class="dl play" href="garage/index.html" target="_blank">▶ Играть в браузере<small>прямо на сайте</small></a>
           <a class="dl" href="downloads/Garage.zip" download>⬇ Скачать для Windows<small>zip · 15 МБ</small></a>
           <div class="hint">Распакуй и запусти «Играть.bat» — игра откроется в браузере</div>
         </div>
@@ -206,6 +218,7 @@
         <p>Загружаешь свою партию с chess.com, и движок Stockfish прямо в браузере оценивает каждый ход: лучший, неточность, ошибка или зевок. Объясняет словами, что происходит на доске, и может прочитать комментарии вслух.</p>
         <div class="tags"><span class="tag">JavaScript</span><span class="tag">Stockfish</span><span class="tag">chess.js</span></div>
         <div class="actions">
+          <a class="dl play" href="chess/index.html" target="_blank">▶ Открыть<small>разбери свою партию</small></a>
           <a class="dl" href="https://github.com/c137-coder/Analysis-of-chess-games/archive/refs/heads/main.zip">⬇ Скачать код<small>zip с GitHub</small></a>
           <a class="repo" href="https://github.com/c137-coder/Analysis-of-chess-games" target="_blank" rel="noopener">Код на GitHub →</a>
         </div>

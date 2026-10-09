@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Разбор партий</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="topbar">
+  <h1>Разбор шахматных партий</h1>
+  <div class="engine-status" id="engineStatus">Движок: загрузка…</div>
+</header>
+
+<main class="layout">
+  <section class="board-col">
+    <div class="player-label" id="topPlayerLabel"></div>
+    <div class="board-wrap">
+      <div class="evalbar" id="evalBar"><div class="evalbar-fill" id="evalBarFill"></div><div class="evalbar-label" id="evalBarLabel">0.0</div></div>
+      <div class="board" id="board"></div>
+    </div>
+    <div class="player-label" id="bottomPlayerLabel"></div>
+    <div class="controls">
+      <button id="btnStart" title="Начало">⏮</button>
+      <button id="btnPrev" title="Назад">◀</button>
+      <button id="btnPlay" title="Автопроигрывание">▶</button>
+      <button id="btnNext" title="Вперёд">▶</button>
+      <button id="btnEnd" title="Конец">⏭</button>
+      <button id="btnFlip" title="Перевернуть доску">⇅</button>
+    </div>
+    <div class="voice-controls">
+      <label class="voice-toggle"><input type="checkbox" id="voiceToggle"> 🔊 Озвучивать ходы</label>
+      <label>Скорость:
+        <select id="voiceRate">
+          <option value="0.8">0.8×</option>
+          <option value="1" selected>1×</option>
+          <option value="1.25">1.25×</option>
+          <option value="1.5">1.5×</option>
+        </select>
+      </label>
+      <select id="voiceSelect" title="Голос"></select>
+    </div>
+    <div class="move-comment" id="moveComment"></div>
+  </section>
+
+  <section class="side-col">
+    <div class="panel" id="sourcePanel">
+      <div class="tabs">
+        <button class="tab-btn active" data-tab="tabUser">По нику chess.com</button>
+        <button class="tab-btn" data-tab="tabPgn">Вставить PGN</button>
+      </div>
+
+      <div class="tab-content" id="tabUser">
+        <div class="row">
+          <input type="text" id="usernameInput" placeholder="ник на chess.com" value="gryaznov-lev">
+          <button id="btnLoadGames">Загрузить партии</button>
+        </div>
+        <div class="hint" id="userHint"></div>
+        <div class="game-list" id="gameList"></div>
+      </div>
+
+      <div class="tab-content hidden" id="tabPgn">
+        <textarea id="pgnInput" placeholder="Вставьте PGN партии сюда..."></textarea>
+        <button id="btnLoadPgn">Разобрать PGN</button>
+      </div>
+    </div>
+
+    <div class="panel" id="analysisPanel">
+      <div class="row analysis-controls">
+        <label>Глубина:
+          <select id="depthSelect">
+            <option value="10">10 (быстро)</option>
+            <option value="14" selected>14 (баланс)</option>
+            <option value="18">18 (точнее, медленнее)</option>
+          </select>
+        </label>
+        <button id="btnAnalyzeAll" disabled>Анализировать партию</button>
+      </div>
+      <div class="progress-wrap hidden" id="progressWrap">
+        <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
+        <div class="progress-label" id="progressLabel"></div>
+      </div>
+
+      <div class="opening-name hidden" id="openingName"></div>
+
+      <div class="accuracy-summary hidden" id="accuracySummary"></div>
+
+      <div class="movelist" id="moveList"></div>
+    </div>
+  </section>
+</main>
+
+<script type="module" src="app.js"></script>
+</body>
+</html>
