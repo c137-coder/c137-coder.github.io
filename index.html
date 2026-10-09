@@ -1,0 +1,217 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Лев</title>
+<style>
+  :root {
+    --bg1: #1d1930;
+    --bg2: #2b2150;
+    --card: rgba(255, 255, 255, 0.06);
+    --card-border: rgba(169, 144, 245, 0.25);
+    --accent: #a990f5;
+    --accent2: #8a6fe0;
+    --text: #e6e0ff;
+    --muted: #aaa3c8;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; min-height: 100%; }
+  body {
+    font-family: "Segoe UI", system-ui, sans-serif;
+    color: var(--text);
+    background: linear-gradient(160deg, var(--bg2), var(--bg1) 60%);
+    background-attachment: fixed;
+    overflow-x: hidden;
+  }
+  canvas#rain { position: fixed; inset: 0; z-index: 0; pointer-events: none; }
+  main { position: relative; z-index: 1; max-width: 860px; margin: 0 auto; padding: 72px 20px 48px; }
+
+  header { text-align: center; margin-bottom: 48px; }
+  .avatar {
+    width: 128px; height: 128px; margin: 0 auto 20px; border-radius: 50%;
+    display: grid; place-items: center; font-size: 64px;
+    background: radial-gradient(circle at 30% 30%, var(--accent), var(--accent2) 70%);
+    box-shadow: 0 0 40px rgba(169, 144, 245, 0.45);
+    animation: float 4s ease-in-out infinite;
+  }
+  @keyframes float { 50% { transform: translateY(-8px); } }
+  h1 { font-size: 56px; margin: 0; letter-spacing: 1px; }
+  .tagline { color: var(--muted); font-size: 18px; margin-top: 8px; }
+  .chips { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; margin-top: 20px; }
+  .chip {
+    padding: 6px 14px; border-radius: 999px; font-size: 15px;
+    background: rgba(169, 144, 245, 0.15); border: 1px solid var(--card-border);
+  }
+
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 18px; }
+  .card {
+    background: var(--card); border: 1px solid var(--card-border); border-radius: 18px;
+    padding: 22px; backdrop-filter: blur(12px);
+    transition: transform .2s, box-shadow .2s;
+  }
+  .card:hover { transform: translateY(-4px); box-shadow: 0 10px 30px rgba(138, 111, 224, 0.3); }
+  .card .icon { font-size: 36px; }
+  .card h2 { margin: 10px 0 8px; font-size: 22px; color: var(--accent); }
+  .card p { margin: 0; color: var(--muted); line-height: 1.5; }
+
+  section.about { margin-top: 36px; }
+  section.about .card p { color: var(--text); }
+
+  section.projects { margin-top: 48px; }
+  .section-title { font-size: 28px; margin: 0 0 18px; text-align: center; }
+  .project .tags { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 14px; }
+  .project .tag {
+    font-size: 13px; padding: 3px 10px; border-radius: 999px;
+    color: var(--accent); border: 1px solid var(--card-border);
+  }
+
+  .project .repo { display: inline-block; margin-top: 14px; color: var(--accent); font-weight: 600; text-decoration: none; }
+  .project { display: flex; flex-direction: column; }
+  .project .actions { margin-top: auto; padding-top: 16px; display: flex; flex-direction: column; gap: 8px; }
+  .dl {
+    display: block; text-align: center; padding: 10px 14px; border-radius: 12px; text-decoration: none;
+    color: #17142a; font-weight: 600; background: linear-gradient(135deg, var(--accent), var(--accent2));
+    transition: transform .2s, box-shadow .2s;
+  }
+  .dl:hover { transform: translateY(-2px); box-shadow: 0 8px 22px rgba(138, 111, 224, 0.45); }
+  .dl small { display: block; font-weight: 400; font-size: 12px; opacity: .75; }
+  .hint { font-size: 12px; color: var(--muted); text-align: center; }
+  .project .repo:hover { text-decoration: underline; }
+
+  .links { display: flex; justify-content: center; gap: 14px; flex-wrap: wrap; margin-top: 40px; }
+  .btn {
+    display: inline-flex; align-items: center; gap: 10px;
+    padding: 12px 22px; border-radius: 14px; text-decoration: none;
+    color: #17142a; font-weight: 600; font-size: 17px;
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    box-shadow: 0 6px 24px rgba(138, 111, 224, 0.4);
+    transition: transform .2s, box-shadow .2s;
+  }
+  .btn:hover { transform: translateY(-2px); box-shadow: 0 10px 30px rgba(138, 111, 224, 0.55); }
+  .btn svg { width: 22px; height: 22px; }
+
+  footer { text-align: center; color: var(--muted); font-size: 14px; margin-top: 48px; }
+</style>
+</head>
+<body>
+<canvas id="rain"></canvas>
+<main>
+  <header>
+    <div class="avatar">♞</div>
+    <h1>Лев</h1>
+    <div class="tagline">12 лет · люблю думать, играть и делать своё</div>
+    <div class="chips">
+      <span class="chip">♟ шахматы</span>
+      <span class="chip">✨ вайбкодинг</span>
+      <span class="chip">🎮 игры</span>
+    </div>
+  </header>
+
+  <div class="grid">
+    <div class="card">
+      <div class="icon" style="color: var(--accent)">♞</div>
+      <h2>Шахматы</h2>
+      <p>Люблю шахматы: продумывать ходы наперёд и искать, где соперник ошибётся.</p>
+    </div>
+    <div class="card">
+      <div class="icon">✨</div>
+      <h2>Вайбкодинг</h2>
+      <p>Делаю свои программы вместе с ИИ: придумываю идею, а потом мы её собираем. Например, человечек, который живёт на рабочем столе.</p>
+    </div>
+    <div class="card">
+      <div class="icon">🎮</div>
+      <h2>Игры</h2>
+      <p>Играю на компе. Нравятся игры, где надо строить, выживать и решать головоломки.</p>
+    </div>
+  </div>
+
+  <section class="about">
+    <div class="card">
+      <h2>Обо мне</h2>
+      <p>Привет! Я Лев. Мне нравится, когда надо подумать: в шахматах, в олимпиадных задачах и в коде. Эта страничка — тоже мой проект.</p>
+    </div>
+  </section>
+
+  <section class="projects">
+    <h2 class="section-title">Мои проекты</h2>
+    <div class="grid">
+      <div class="card project">
+        <div class="icon">🕺</div>
+        <h2>Stickman</h2>
+        <p>Человечек, который живёт прямо на рабочем столе: ходит, машет рукой, его можно схватить мышкой и подкинуть — он упадёт и встанет.</p>
+        <div class="tags"><span class="tag">Godot</span><span class="tag">GDScript</span></div>
+        <div class="actions">
+          <a class="dl" href="downloads/Stickman.zip" download>⬇ Скачать для Windows<small>zip · 37 МБ</small></a>
+          <div class="hint">Распакуй и запусти Stickman.exe</div>
+        </div>
+      </div>
+      <div class="card project">
+        <div class="icon">🔧</div>
+        <h2>Гараж: собери тачку</h2>
+        <p>Игра, где в гараже собираешь «пятёрку» с нуля: ставишь детали, крутишь болты трещоткой, заливаешь жидкости и выезжаешь на тест-драйв. На магнитофоне играет музыка, которую игра сочиняет сама.</p>
+        <div class="tags"><span class="tag">Unity</span><span class="tag">C#</span><span class="tag">Яндекс Игры</span></div>
+        <div class="actions">
+          <a class="dl" href="downloads/Garage.zip" download>⬇ Скачать для Windows<small>zip · 15 МБ</small></a>
+          <div class="hint">Распакуй и запусти «Играть.bat» — игра откроется в браузере</div>
+        </div>
+      </div>
+      <div class="card project">
+        <div class="icon" style="color: var(--accent)">♛</div>
+        <h2>Разбор шахматных партий</h2>
+        <p>Загружаешь свою партию с chess.com, и движок Stockfish прямо в браузере оценивает каждый ход: лучший, неточность, ошибка или зевок. Объясняет словами, что происходит на доске, и может прочитать комментарии вслух.</p>
+        <div class="tags"><span class="tag">JavaScript</span><span class="tag">Stockfish</span><span class="tag">chess.js</span></div>
+        <div class="actions">
+          <a class="dl" href="https://github.com/c137-coder/Analysis-of-chess-games/archive/refs/heads/main.zip">⬇ Скачать код<small>zip с GitHub</small></a>
+          <a class="repo" href="https://github.com/c137-coder/Analysis-of-chess-games" target="_blank" rel="noopener">Код на GitHub →</a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <div class="links">
+    <a class="btn" href="https://steamcommunity.com/profiles/76561199405354344" target="_blank" rel="noopener">
+      <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="12" cy="12" r="10" opacity=".25"/><circle cx="15.5" cy="9" r="3"/><circle cx="8.5" cy="15" r="2.2"/><path d="M8.5 15 15.5 9" stroke="currentColor" stroke-width="2"/></svg>
+      Мой Steam
+    </a>
+    <a class="btn" href="https://github.com/c137-coder" target="_blank" rel="noopener">
+      <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2a10 10 0 0 0-3.16 19.49c.5.09.68-.22.68-.48v-1.7c-2.78.6-3.37-1.34-3.37-1.34-.45-1.16-1.11-1.47-1.11-1.47-.91-.62.07-.6.07-.6 1 .07 1.53 1.03 1.53 1.03.9 1.52 2.34 1.08 2.91.83.09-.65.35-1.08.63-1.33-2.22-.25-4.55-1.11-4.55-4.94 0-1.09.39-1.98 1.03-2.68-.1-.25-.45-1.27.1-2.65 0 0 .84-.27 2.75 1.02a9.5 9.5 0 0 1 5 0c1.91-1.29 2.75-1.02 2.75-1.02.55 1.38.2 2.4.1 2.65.64.7 1.03 1.59 1.03 2.68 0 3.84-2.34 4.68-4.57 4.93.36.31.68.92.68 1.85v2.74c0 .27.18.58.69.48A10 10 0 0 0 12 2Z"/></svg>
+      Мой GitHub
+    </a>
+  </div>
+
+  <footer>Сделано с вайбом · 2026</footer>
+</main>
+
+<script>
+  const c = document.getElementById('rain');
+  const ctx = c.getContext('2d');
+  let drops = [];
+  function resize() {
+    c.width = innerWidth; c.height = innerHeight;
+    drops = Array.from({ length: Math.floor(innerWidth / 9) }, () => ({
+      x: Math.random() * c.width,
+      y: Math.random() * c.height,
+      len: 8 + Math.random() * 14,
+      speed: 4 + Math.random() * 6,
+    }));
+  }
+  function tick() {
+    ctx.clearRect(0, 0, c.width, c.height);
+    ctx.strokeStyle = 'rgba(200, 185, 255, 0.35)';
+    ctx.lineWidth = 1;
+    for (const d of drops) {
+      ctx.beginPath();
+      ctx.moveTo(d.x, d.y);
+      ctx.lineTo(d.x - 1, d.y + d.len);
+      ctx.stroke();
+      d.y += d.speed;
+      if (d.y > c.height) { d.y = -d.len; d.x = Math.random() * c.width; }
+    }
+    requestAnimationFrame(tick);
+  }
+  addEventListener('resize', resize);
+  resize(); tick();
+</script>
+</body>
+</html>
