@@ -395,3 +395,54 @@ body {
   .player-label { width: 90vw; max-width: 420px; }
   .evalbar { height: 90vw; max-height: 420px; }
 }
+
+/* ---------- Ход на доске: выбор фигуры и возможные клетки ---------- */
+.board .sq { cursor: pointer; }
+.sq.selected { box-shadow: inset 0 0 0 4px rgba(255, 215, 0, .95); }
+.sq.hint { box-shadow: inset 0 0 0 4px #4ade80; }
+.sq.target::after {
+  content: ''; position: absolute; width: 26%; height: 26%; border-radius: 50%;
+  background: rgba(0, 0, 0, .28); pointer-events: none;
+}
+.sq.target-capture::after {
+  content: ''; position: absolute; inset: 4px; border-radius: 50%;
+  border: 5px solid rgba(0, 0, 0, .28); pointer-events: none;
+}
+.board-hint { width: 480px; font-size: 12px; color: var(--text-dim); }
+
+.explore-bar {
+  width: 480px; display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
+  background: var(--panel); border: 1px solid var(--accent); border-radius: 8px; padding: 8px;
+}
+.explore-bar .explore-line { flex: 1 1 100%; font-size: 13px; color: var(--text-dim); word-break: break-word; }
+.explore-bar button {
+  background: var(--panel-light); color: var(--text); border: 1px solid var(--border);
+  border-radius: 6px; padding: 6px 10px; cursor: pointer; font-size: 13px;
+}
+.explore-bar button:hover { border-color: var(--accent); }
+
+/* ---------- График партии ---------- */
+.eval-graph { margin: 10px 0; }
+.eval-graph svg { width: 100%; height: 110px; display: block; border-radius: 6px; cursor: pointer; }
+.graph-caption { font-size: 11px; color: var(--text-dim); margin-top: 4px; }
+
+/* ---------- Тренажёр и статистика ---------- */
+#tabTrainer button, #tabStats button {
+  background: var(--accent); color: #fff; border: 0; border-radius: 6px; padding: 8px 14px; cursor: pointer; font-weight: 600;
+}
+#tabTrainer button.secondary { background: var(--panel-light); border: 1px solid var(--border); }
+#tabTrainer button:disabled { background: #555; cursor: default; }
+.trainer-new { color: var(--accent); font-size: 13px; }
+.trainer-stats { display: flex; gap: 10px; margin: 10px 0; }
+.trainer-stats div { flex: 1; background: var(--panel-light); border-radius: 6px; padding: 8px; text-align: center; }
+.trainer-stats b { display: block; font-size: 22px; }
+.trainer-stats span { font-size: 11px; color: var(--text-dim); }
+.stats-block { background: var(--panel-light); border-radius: 6px; padding: 10px; margin-bottom: 10px; font-size: 13px; }
+.stats-title { font-weight: 700; margin-bottom: 6px; }
+.stats-big { font-size: 20px; font-weight: 700; }
+.stats-row { display: flex; justify-content: space-between; gap: 8px; padding: 2px 0; }
+.stats-block .res-win { color: var(--best); }
+.stats-block .res-loss { color: var(--blunder); }
+.stats-block .res-draw { color: var(--text-dim); }
+.spark { width: 100%; height: 50px; display: block; }
+.spark-range { font-size: 11px; color: var(--text-dim); }

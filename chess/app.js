@@ -56,6 +56,12 @@ const btnFlip = document.getElementById('btnFlip');
 const voiceToggle = document.getElementById('voiceToggle');
 const voiceRate = document.getElementById('voiceRate');
 const voiceSelect = document.getElementById('voiceSelect');
+const exploreBar = document.getElementById('exploreBar');
+const boardHint = document.getElementById('boardHint');
+const evalGraphEl = document.getElementById('evalGraph');
+const tabTrainer = document.getElementById('tabTrainer');
+const tabStats = document.getElementById('tabStats');
+const trainerTabBtn = document.getElementById('trainerTabBtn');
 
 // ---------- App state ----------
 const state = {
@@ -67,6 +73,12 @@ const state = {
   playTimer: null,
   analyzing: false,
   voiceEnabled: false,
+  // 'game' — просмотр партии; 'explore' — свой вариант поверх позиции;
+  // 'trainer' — задача из собственной ошибки. Клики по доске ведут себя по-разному.
+  mode: 'game',
+  explore: null,
+  trainer: null,
+  loadedGames: null, // { games, username } — последняя загрузка с chess.com, для статистики
 };
 
 // ---------- Stockfish engine wrapper ----------
@@ -394,7 +406,7 @@ function drawArrow(fromSq, toSq, flip) {
   boardEl.appendChild(svg);
 }
 
-function drawBoard(fen, { flip = false, lastMove = null, arrow = null } = {}) {
+function drawBoard(fen, { flip = false, lastMove = null, arrow = null, selected = null, targets = [], hint = null } = {}) {
   boardEl.innerHTML = '';
   const rows = fen.split(' ')[0].split('/');
   const grid = [];
@@ -418,6 +430,7 @@ function drawBoard(fen, { flip = false, lastMove = null, arrow = null } = {}) {
       const isLight = (file + rank) % 2 === 1;
       const sq = document.createElement('div');
       sq.className = 'sq ' + (isLight ? 'light' : 'dark');
+      sq.dataset.square = squareName;
       const pieceChar = grid[r][f];
       if (pieceChar) {
         const span = document.createElement('span');
@@ -428,6 +441,9 @@ function drawBoard(fen, { flip = false, lastMove = null, arrow = null } = {}) {
       }
       if (lastMove && squareName === lastMove.from) sq.classList.add('highlight-from');
       if (lastMove && squareName === lastMove.to) sq.classList.add('highlight-to');
+      if (squareName === selected) sq.classList.add('selected');
+      if (squareName === hint) sq.classList.add('hint');
+      if (targets.includes(squareName)) sq.classList.add(pieceChar ? 'target-capture' : 'target');
       boardEl.appendChild(sq);
     }
   }
@@ -890,6 +906,7 @@ function updateEvalBarForPly(p) {
 
 function goToPly(p) {
   if (!state.game) return;
+  if (state.mode !== 'game') leaveSideMode();
   const N = state.game.sanMoves.length;
   p = Math.max(0, Math.min(N, p));
   state.currentPly = p;
@@ -919,6 +936,7 @@ function goToPly(p) {
   drawBoard(fen, { flip: state.flipped, lastMove, arrow });
   updateEvalBarForPly(p);
   highlightActiveMoveCell();
+  updateGraphMarker();
   moveCommentEl.innerHTML = commentHtml;
   return speak(htmlToSpeechText(commentHtml));
 }
@@ -951,6 +969,9 @@ async function analyzeAllMoves() {
   computeClassification();
   renderMoveList();
   renderAccuracySummary();
+  renderEvalGraph();
+  collectTrainerPositions();
+  recordAccuracyHistory();
   progressWrap.classList.add('hidden');
   btnAnalyzeAll.disabled = false;
   state.analyzing = false;
@@ -1001,11 +1022,14 @@ async function loadGameFromPgn(pgnText, userColor) {
     const bookInfo = detectBook(sanMoves);
     const forcedFlags = computeForcedFlags(fens, sanMoves.length);
     state.game = { headers, sanMoves, fens, verbose, userColor, bookInfo, forcedFlags };
+    if (state.mode !== 'game') leaveSideMode();
     state.analysis = null;
     state.currentPly = 0;
     state.flipped = userColor === 'b';
     accuracySummaryEl.classList.add('hidden');
     accuracySummaryEl.innerHTML = '';
+    evalGraphEl.classList.add('hidden');
+    evalGraphEl.innerHTML = '';
     btnAnalyzeAll.disabled = sanMoves.length === 0;
     renderMoveList();
     renderPlayerLabels();
@@ -1043,6 +1067,10 @@ async function loadGamesForUser(username) {
     allGames = allGames.slice(0, 40);
     renderGameList(allGames, username);
     userHint.textContent = `Найдено партий: ${allGames.length}`;
+    // Запоминаем ник в браузере вместо того, чтобы держать его в коде страницы.
+    try { localStorage.setItem('chess-username', username); } catch (e) { /* приватный режим */ }
+    state.loadedGames = { games: allGames, username };
+    renderStats();
   } catch (err) {
     userHint.innerHTML = 'Не удалось получить партии автоматически (chess.com мог отклонить запрос из браузера). ' +
       'Откройте партию на chess.com → «Поделиться» → вкладка PGN, скопируйте текст и вставьте во вкладку «Вставить PGN».';
@@ -1074,6 +1102,487 @@ function renderGameList(games, username) {
     });
     gameList.appendChild(div);
   }
+}
+
+// ---------- Move input on the board ----------
+// Общая механика «нажми фигуру — нажми клетку» для режимов «свой ход» и
+// «тренажёр». Возвращает сделанный ход (verbose из chess.js) или null.
+let boardInput = null; // { fen, selected, flip, onMove, extra }
+
+function legalTargets(fen, from) {
+  try { return new Chess(fen).moves({ square: from, verbose: true }).map((m) => m.to); } catch (e) { return []; }
+}
+
+function redrawInput() {
+  if (!boardInput) return;
+  const { fen, selected, flip, extra } = boardInput;
+  drawBoard(fen, {
+    flip,
+    selected,
+    targets: selected ? legalTargets(fen, selected) : [],
+    ...extra,
+  });
+}
+
+function startBoardInput(fen, flip, onMove, extra = {}) {
+  boardInput = { fen, selected: null, flip, onMove, extra };
+  redrawInput();
+}
+
+boardEl.addEventListener('click', (e) => {
+  const sqEl = e.target.closest('.sq');
+  if (!sqEl) return;
+  const square = sqEl.dataset.square;
+  // В обычном просмотре клик по своей фигуре сразу открывает «свой ход».
+  if (state.mode === 'game') {
+    if (state.analyzing || state.playing) return;
+    const fen = state.game ? state.game.fens[state.currentPly] : new Chess().fen();
+    const c = new Chess(fen);
+    const pc = c.get(square);
+    if (!pc || pc.color !== c.turn()) return;
+    enterExplore(fen);
+  }
+  if (!boardInput) return;
+  const c = new Chess(boardInput.fen);
+  const pc = c.get(square);
+  if (boardInput.selected && boardInput.selected !== square) {
+    const from = boardInput.selected;
+    const piece = c.get(from);
+    const isPromo = piece && piece.type === 'p' && (square[1] === '8' || square[1] === '1');
+    let mv = null;
+    try { mv = c.move({ from, to: square, promotion: isPromo ? 'q' : undefined }); } catch (err) { mv = null; }
+    if (mv) {
+      boardInput.selected = null;
+      boardInput.onMove(mv, c.fen());
+      return;
+    }
+  }
+  boardInput.selected = pc && pc.color === c.turn() && boardInput.selected !== square ? square : null;
+  redrawInput();
+});
+
+function leaveSideMode() {
+  state.mode = 'game';
+  state.explore = null;
+  state.trainer = null;
+  boardInput = null;
+  exploreBar.classList.add('hidden');
+  exploreBar.innerHTML = '';
+  boardHint.classList.remove('hidden');
+}
+
+// Движок один, и одновременно он считает одну позицию. Полный анализ партии
+// важнее — пока он идёт, свои ходы и тренажёр ждут.
+let engineBusy = false;
+async function evalPosition(fen, depth) {
+  engineBusy = true;
+  try {
+    const { bestmove, info } = await engine.analyze(fen, depth);
+    const ev = evalFromInfo(info, fen.split(' ')[1]);
+    return { ...ev, bestmove };
+  } finally {
+    engineBusy = false;
+  }
+}
+
+// Потеря в сантипешках с точки зрения сходившей стороны.
+function lossForMover(beforeWhiteCp, afterWhiteCp, moverColor) {
+  const loss = moverColor === 'w' ? beforeWhiteCp - afterWhiteCp : afterWhiteCp - beforeWhiteCp;
+  return Math.max(0, loss);
+}
+
+// ---------- Explore: «Попробовать свой ход» ----------
+function exploreDepth() {
+  return Math.min(parseInt(depthSelect.value, 10), 14);
+}
+
+function enterExplore(fen) {
+  if (state.playing) stopPlay();
+  state.mode = 'explore';
+  const baseP = state.currentPly;
+  const knownEval = state.analysis && state.game && state.game.fens[baseP] === fen
+    ? { whiteCp: state.analysis.whiteCp[baseP], mateIn: state.analysis.mateIn[baseP] }
+    : null;
+  state.explore = { line: [{ fen, san: null, eval: knownEval, move: null }] };
+  boardHint.classList.add('hidden');
+  exploreBar.classList.remove('hidden');
+  renderExplore('Свой вариант: сделай ход на доске. Движок оценит его и покажет лучший ответ.');
+}
+
+function exploreNode() {
+  return state.explore.line[state.explore.line.length - 1];
+}
+
+function renderExplore(commentHtml, arrow = null) {
+  const node = exploreNode();
+  const sans = state.explore.line.slice(1).map((n) => n.san);
+  startBoardInput(node.fen, state.flipped, onExploreMove, { lastMove: node.move, arrow });
+  if (node.eval) updateEvalBar(node.eval.whiteCp, node.eval.mateIn);
+  moveCommentEl.innerHTML = commentHtml;
+  exploreBar.innerHTML =
+    `<span class="explore-line">🧪 Вариант: ${sans.length ? sans.join(' ') : '—'}</span>` +
+    '<button id="exReply" title="Сыграть лучший ответ движка">🤖 Ответ движка</button>' +
+    '<button id="exUndo">↶ Назад</button>' +
+    '<button id="exBack">✕ К партии</button>';
+  document.getElementById('exReply').onclick = exploreEngineReply;
+  document.getElementById('exUndo').onclick = () => {
+    if (state.explore.line.length > 1) state.explore.line.pop();
+    renderExplore('Ход отменён. Попробуй другой.');
+  };
+  document.getElementById('exBack').onclick = () => goToPly(state.currentPly);
+}
+
+async function ensureEval(node) {
+  if (!node.eval) {
+    const ev = await evalPosition(node.fen, exploreDepth());
+    node.eval = { whiteCp: ev.whiteCp, mateIn: ev.mateIn };
+    node.best = ev.bestmove;
+  }
+  return node.eval;
+}
+
+async function onExploreMove(mv, newFen) {
+  if (engineBusy || state.analyzing) { moveCommentEl.textContent = 'Движок ещё думает — секунду…'; return; }
+  const prev = exploreNode();
+  const node = { fen: newFen, san: mv.san, move: mv, eval: null };
+  state.explore.line.push(node);
+  renderExplore('Считаю…');
+  const before = await ensureEval(prev);
+  const ev = await evalPosition(newFen, exploreDepth());
+  if (!state.explore || exploreNode() !== node) return; // успели уйти из варианта
+  node.eval = { whiteCp: ev.whiteCp, mateIn: ev.mateIn };
+  node.best = ev.bestmove;
+  const loss = lossForMover(before.whiteCp, node.eval.whiteCp, mv.color);
+  const cls = classifyLoss(loss);
+  const who = mv.color === 'w' ? 'Белые' : 'Чёрные';
+  let html = `<span class="tag" style="background:var(--${cls})">${CLASS_LABELS[cls]}</span> ${who}: ${mv.san}. ` +
+    `Оценка: ${formatEval(before.whiteCp, before.mateIn)} → <b>${formatEval(node.eval.whiteCp, node.eval.mateIn)}</b>.`;
+  if (loss > 10 && prev.best) html += ` Сильнее было ${sanForUciMove(prev.fen, prev.best)}.`;
+  let arrow = null;
+  if (ev.bestmove && ev.bestmove !== '(none)') {
+    html += `<br>Лучший ответ соперника — <b>${sanForUciMove(newFen, ev.bestmove)}</b> (стрелка на доске).`;
+    arrow = { from: ev.bestmove.slice(0, 2), to: ev.bestmove.slice(2, 4) };
+  } else if (new Chess(newFen).isCheckmate()) {
+    html += '<br>Это мат! 🎉';
+  }
+  renderExplore(html, arrow);
+}
+
+async function exploreEngineReply() {
+  if (engineBusy || state.analyzing) return;
+  const node = exploreNode();
+  if (!node.best) {
+    renderExplore('Считаю ответ…');
+    await ensureEval(node);
+  }
+  if (!node.best || node.best === '(none)') { renderExplore('Ходов нет — партия в этой позиции окончена.'); return; }
+  const c = new Chess(node.fen);
+  const uci = node.best;
+  const mv = c.move({ from: uci.slice(0, 2), to: uci.slice(2, 4), promotion: uci.length > 4 ? uci[4] : undefined });
+  await onExploreMove(mv, c.fen());
+}
+
+function updateEvalBar(wcp, mate) {
+  let pct;
+  if (mate !== null && mate !== undefined) pct = mate > 0 ? 97 : 3;
+  else pct = 50 + (Math.max(-1000, Math.min(1000, wcp)) / 1000) * 50;
+  evalBarFill.style.height = pct + '%';
+  evalBarLabel.textContent = formatEval(wcp, mate);
+}
+
+// ---------- Trainer: задачи из собственных ошибок ----------
+// После анализа каждая ошибка/зевок игрока сохраняется как позиция «найди ход
+// сильнее». Хранится в localStorage браузера — никуда не отправляется.
+const TRAINER_KEY = 'chess-trainer-v1';
+
+function loadTrainer() {
+  try {
+    const d = JSON.parse(localStorage.getItem(TRAINER_KEY) || 'null');
+    if (d && Array.isArray(d.items)) return d;
+  } catch (e) { /* ignore */ }
+  return { items: [], streak: 0, bestStreak: 0 };
+}
+function saveTrainer(d) {
+  try { localStorage.setItem(TRAINER_KEY, JSON.stringify(d)); } catch (e) { /* ignore */ }
+}
+
+function collectTrainerPositions() {
+  const d = loadTrainer();
+  const { moveClass, bestUci, whiteCp } = state.analysis;
+  const { fens, sanMoves, headers, userColor } = state.game;
+  let added = 0;
+  for (let k = 1; k <= sanMoves.length; k++) {
+    const cls = moveClass[k - 1];
+    if (cls !== 'mistake' && cls !== 'blunder') continue;
+    const mover = k % 2 === 1 ? 'w' : 'b';
+    if (userColor && mover !== userColor) continue; // учимся на своих ошибках, не на чужих
+    const fen = fens[k - 1];
+    if (!bestUci[k - 1] || d.items.some((it) => it.fen === fen)) continue;
+    d.items.push({
+      fen,
+      bestUci: bestUci[k - 1],
+      evalBefore: whiteCp[k - 1],
+      played: sanMoves[k - 1],
+      cls,
+      from: `${headers.White || 'Белые'} — ${headers.Black || 'Чёрные'}, ход ${Math.ceil(k / 2)}`,
+      solved: false,
+    });
+    added++;
+  }
+  saveTrainer(d);
+  renderTrainerTab(added);
+}
+
+function renderTrainerTab(justAdded = 0) {
+  const d = loadTrainer();
+  const left = d.items.filter((it) => !it.solved).length;
+  trainerTabBtn.textContent = left ? `Тренажёр (${left})` : 'Тренажёр';
+  let html = '<p class="hint">Здесь собираются позиции, где ты ошибся. Найди ход сильнее, чем сыграл тогда.</p>';
+  if (justAdded) html += `<p class="trainer-new">➕ Из этой партии добавлено задач: ${justAdded}</p>`;
+  if (!d.items.length) {
+    html += '<p>Пока задач нет. Проанализируй свою партию — ошибки попадут сюда.</p>';
+  } else {
+    html += `<div class="trainer-stats"><div><b>${left}</b><span>осталось</span></div>` +
+      `<div><b>${d.items.length - left}</b><span>решено</span></div>` +
+      `<div><b>${d.bestStreak || 0}</b><span>лучшая серия</span></div></div>`;
+    html += `<button id="btnTrain" ${left ? '' : 'disabled'}>${left ? '▶ Решать задачи' : 'Все задачи решены 🎉'}</button>`;
+    if (!left) html += ' <button id="btnTrainReset" class="secondary">↺ Решать заново</button>';
+  }
+  tabTrainer.innerHTML = html;
+  const b = document.getElementById('btnTrain');
+  if (b) b.onclick = startTrainer;
+  const r = document.getElementById('btnTrainReset');
+  if (r) r.onclick = () => { const dd = loadTrainer(); dd.items.forEach((it) => { it.solved = false; }); saveTrainer(dd); renderTrainerTab(); };
+}
+
+function startTrainer() {
+  if (state.analyzing) { alert('Дождитесь окончания анализа партии.'); return; }
+  if (state.playing) stopPlay();
+  const d = loadTrainer();
+  const pool = d.items.filter((it) => !it.solved);
+  if (!pool.length) { renderTrainerTab(); return; }
+  const item = pool[Math.floor(Math.random() * pool.length)];
+  state.mode = 'trainer';
+  state.trainer = { item, usedHelp: false, done: false };
+  boardHint.classList.add('hidden');
+  exploreBar.classList.remove('hidden');
+  const side = item.fen.split(' ')[1] === 'w' ? 'белых' : 'чёрных';
+  renderTrainer(`🎯 <b>Найди ход сильнее.</b> Ход ${side}. В партии (${item.from}) здесь было сыграно <b>${item.played}</b> — ` +
+    `${item.cls === 'blunder' ? 'зевок' : 'ошибка'}.`);
+}
+
+function renderTrainer(commentHtml, extra = {}) {
+  const { item } = state.trainer;
+  const flip = item.fen.split(' ')[1] === 'b';
+  startBoardInput(item.fen, flip, onTrainerMove, extra);
+  updateEvalBar(0, null);
+  evalBarLabel.textContent = '?';
+  moveCommentEl.innerHTML = commentHtml;
+  const d = loadTrainer();
+  exploreBar.innerHTML =
+    `<span class="explore-line">🔥 Серия: ${d.streak || 0}</span>` +
+    '<button id="trHint">💡 Подсказка</button>' +
+    '<button id="trShow">👁 Ответ</button>' +
+    '<button id="trNext">⏭ Следующая</button>' +
+    '<button id="trExit">✕ Выйти</button>';
+  document.getElementById('trHint').onclick = () => {
+    state.trainer.usedHelp = true;
+    renderTrainer(moveCommentEl.innerHTML, { hint: item.bestUci.slice(0, 2) });
+  };
+  document.getElementById('trShow').onclick = () => {
+    state.trainer.usedHelp = true;
+    const san = sanForUciMove(item.fen, item.bestUci);
+    renderTrainer(`Ответ: <b>${san}</b> (стрелка). Сыграй его на доске, чтобы закрепить.`,
+      { arrow: { from: item.bestUci.slice(0, 2), to: item.bestUci.slice(2, 4) } });
+  };
+  document.getElementById('trNext').onclick = startTrainer;
+  document.getElementById('trExit').onclick = () => { leaveSideMode(); if (state.game) goToPly(state.currentPly); else drawBoard(new Chess().fen()); renderTrainerTab(); };
+}
+
+async function onTrainerMove(mv, newFen) {
+  const t = state.trainer;
+  if (!t || t.done) return;
+  if (engineBusy) return;
+  const { item } = t;
+  const uci = mv.from + mv.to + (mv.promotion || '');
+  let good = uci === item.bestUci;
+  let note = '';
+  if (!good) {
+    // Ход не совпал с ходом движка — но может быть не хуже. Проверяем.
+    moveCommentEl.innerHTML = `Проверяю ${mv.san}…`;
+    const ev = await evalPosition(newFen, 12);
+    const loss = lossForMover(item.evalBefore, ev.whiteCp, mv.color);
+    if (loss <= 40) { good = true; note = ` Движок предпочитал ${sanForUciMove(item.fen, item.bestUci)}, но твой ход почти так же хорош.`; }
+    else note = ` Этот ход уступает примерно ${(loss / 100).toFixed(1)} пешки.`;
+  }
+  const d = loadTrainer();
+  const stored = d.items.find((it) => it.fen === item.fen);
+  if (good) {
+    t.done = true;
+    if (stored) stored.solved = true;
+    d.streak = t.usedHelp ? 0 : (d.streak || 0) + 1;
+    d.bestStreak = Math.max(d.bestStreak || 0, d.streak);
+    saveTrainer(d);
+    renderTrainerTab();
+    renderTrainer(`✅ <b>Верно: ${mv.san}!</b>${note}${t.usedHelp ? '' : ' Серия растёт 🔥'}`,
+      { lastMove: mv });
+    boardInput.fen = newFen;
+    redrawInput();
+  } else {
+    d.streak = 0;
+    saveTrainer(d);
+    renderTrainer(`❌ ${mv.san} — не то.${note} Попробуй ещё!`);
+  }
+}
+
+// ---------- Evaluation graph ----------
+// Кривая шансов белых по ходам (как Win% у lichess): у центральной линии —
+// равенство, вверху — перевес белых. Точки — ошибки и зевки.
+function winPct(cp, mate) {
+  if (mate !== null && mate !== undefined) return mate > 0 ? 100 : 0;
+  return 50 + 50 * (2 / (1 + Math.exp(-0.00368208 * cp)) - 1);
+}
+
+function renderEvalGraph() {
+  const { whiteCp, mateIn, moveClass } = state.analysis;
+  const N = whiteCp.length - 1;
+  const W = 400, H = 110;
+  const x = (i) => (N ? (i / N) * W : 0);
+  const y = (i) => H - (winPct(whiteCp[i], mateIn[i]) / 100) * H;
+  let d = `M0,${H} `;
+  for (let i = 0; i <= N; i++) d += `L${x(i).toFixed(1)},${y(i).toFixed(1)} `;
+  d += `L${W},${H} Z`;
+  let dots = '';
+  for (let k = 1; k <= N; k++) {
+    const c = moveClass[k - 1];
+    if (c === 'mistake' || c === 'blunder' || c === 'inaccuracy') {
+      dots += `<circle cx="${x(k).toFixed(1)}" cy="${y(k).toFixed(1)}" r="${c === 'inaccuracy' ? 2.5 : 4}" fill="var(--${c})"><title>${Math.ceil(k / 2)}${k % 2 ? '.' : '...'} ${state.game.sanMoves[k - 1]} — ${CLASS_LABELS[c]}</title></circle>`;
+    }
+  }
+  evalGraphEl.innerHTML =
+    `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" id="evalSvg">` +
+    `<rect width="${W}" height="${H}" fill="#3a3a3a"/>` +
+    `<path d="${d}" fill="#e8e8e8"/>` +
+    `<line x1="0" y1="${H / 2}" x2="${W}" y2="${H / 2}" stroke="#888" stroke-dasharray="3 3" stroke-width="0.7"/>` +
+    `<line id="evalMarker" x1="0" y1="0" x2="0" y2="${H}" stroke="var(--accent)" stroke-width="2"/>` +
+    dots + '</svg>' +
+    '<div class="graph-caption">Перевес по ходу партии: светлое — белые, тёмное — чёрные. Нажми на график, чтобы перейти к ходу.</div>';
+  evalGraphEl.classList.remove('hidden');
+  const svg = document.getElementById('evalSvg');
+  svg.addEventListener('click', (e) => {
+    const r = svg.getBoundingClientRect();
+    goToPly(Math.round(((e.clientX - r.left) / r.width) * N));
+  });
+  updateGraphMarker();
+}
+
+function updateGraphMarker() {
+  const m = document.getElementById('evalMarker');
+  if (!m || !state.game) return;
+  const N = state.game.sanMoves.length;
+  const xx = N ? (state.currentPly / N) * 400 : 0;
+  m.setAttribute('x1', xx);
+  m.setAttribute('x2', xx);
+}
+
+// ---------- Statistics ----------
+const ACC_KEY = 'chess-acc-history-v1';
+
+// Запоминает точность игрока в каждой проанализированной партии, чтобы
+// статистика могла показать, как она меняется со временем.
+function recordAccuracyHistory() {
+  const color = state.game.userColor;
+  if (!color) return;
+  const { moveClass, moveAcc } = state.analysis;
+  const accs = [];
+  for (let k = 1; k <= moveClass.length; k++) {
+    if ((k % 2 === 1 ? 'w' : 'b') !== color) continue;
+    if (moveClass[k - 1] === 'book' || moveClass[k - 1] === 'forced') continue;
+    accs.push(moveAcc[k - 1]);
+  }
+  if (!accs.length) return;
+  const h = state.game.headers;
+  const key = `${h.Date}|${h.White}|${h.Black}|${h.EndTime || h.Round || ''}`;
+  let hist = [];
+  try { hist = JSON.parse(localStorage.getItem(ACC_KEY) || '[]'); } catch (e) { /* ignore */ }
+  hist = hist.filter((x) => x.key !== key);
+  hist.push({ key, date: h.Date || '', acc: averageAccuracy(accs), opp: color === 'w' ? h.Black : h.White });
+  try { localStorage.setItem(ACC_KEY, JSON.stringify(hist.slice(-50))); } catch (e) { /* ignore */ }
+  renderStats();
+}
+
+function openingFromPgn(pgn) {
+  const m = /\[ECOUrl "[^"]*\/openings\/([^"]+)"\]/.exec(pgn || '');
+  if (!m) return null;
+  // «French-Defense-Advance-Nimzowitsch-...» → «French Defense»: для статистики
+  // нужно семейство дебюта, иначе каждая партия попадает в свой отдельный вариант.
+  // Режем после первого «опорного» слова (Defense, Opening, Game…), иначе берём 2 слова.
+  const words = decodeURIComponent(m[1]).split('-');
+  const cut = words.findIndex((w) => /^\d|\.\.\./.test(w));
+  const name = words.slice(0, cut === -1 ? words.length : cut);
+  const anchor = name.findIndex((w, i) => i < 4 && /^(Defense|Opening|Game|Gambit|Attack|System)$/.test(w));
+  return name.slice(0, anchor === -1 ? 2 : anchor + 1).join(' ');
+}
+
+function sparkline(values, w = 260, h = 50) {
+  if (values.length < 2) return '';
+  const min = Math.min(...values), max = Math.max(...values), span = max - min || 1;
+  const pts = values.map((v, i) => `${((i / (values.length - 1)) * w).toFixed(1)},${(h - 4 - ((v - min) / span) * (h - 8)).toFixed(1)}`).join(' ');
+  return `<svg viewBox="0 0 ${w} ${h}" class="spark"><polyline points="${pts}" fill="none" stroke="var(--accent)" stroke-width="2"/></svg>` +
+    `<div class="spark-range">${min} … ${max}</div>`;
+}
+
+function renderStats() {
+  let hist = [];
+  try { hist = JSON.parse(localStorage.getItem(ACC_KEY) || '[]'); } catch (e) { /* ignore */ }
+  let html = '';
+  const lg = state.loadedGames;
+  if (!lg) {
+    html += '<p class="hint">Загрузи партии по нику (первая вкладка) — здесь появится статистика.</p>';
+  } else {
+    const u = lg.username.toLowerCase();
+    const rows = lg.games.filter((g) => g.pgn).map((g) => {
+      const isWhite = (g.white.username || '').toLowerCase() === u;
+      const me = isWhite ? g.white : g.black;
+      const res = me.result === 'win' ? 'win' : ['agreed', 'repetition', 'stalemate', 'insufficient', '50move', 'timevsinsufficient'].includes(me.result) ? 'draw' : 'loss';
+      return { isWhite, res, rating: me.rating, tc: g.time_class, end: g.end_time || 0, opening: openingFromPgn(g.pgn) };
+    });
+    const count = (arr, r) => arr.filter((x) => x.res === r).length;
+    const line = (arr) => `<span class="res-win">${count(arr, 'win')}</span> / <span class="res-draw">${count(arr, 'draw')}</span> / <span class="res-loss">${count(arr, 'loss')}</span>`;
+    const white = rows.filter((r) => r.isWhite), black = rows.filter((r) => !r.isWhite);
+    const scorePct = (arr) => arr.length ? Math.round(((count(arr, 'win') + count(arr, 'draw') / 2) / arr.length) * 100) : 0;
+    html += `<div class="stats-block"><div class="stats-title">Последние ${rows.length} партий</div>` +
+      `<div class="stats-big">${line(rows)}</div><div class="hint">победы / ничьи / поражения · набрано ${scorePct(rows)}% очков</div>` +
+      `<div>⚪ Белыми: ${line(white)} (${scorePct(white)}%)</div><div>⚫ Чёрными: ${line(black)} (${scorePct(black)}%)</div></div>`;
+
+    const byOpening = new Map();
+    rows.forEach((r) => { if (!r.opening) return; if (!byOpening.has(r.opening)) byOpening.set(r.opening, []); byOpening.get(r.opening).push(r); });
+    const top = [...byOpening.entries()].sort((a, b) => b[1].length - a[1].length).slice(0, 5);
+    if (top.length) {
+      html += '<div class="stats-block"><div class="stats-title">Любимые дебюты</div>' +
+        top.map(([name, arr]) => `<div class="stats-row"><span>${name}</span><span>${arr.length} · ${scorePct(arr)}%</span></div>`).join('') + '</div>';
+    }
+
+    const tcCount = {};
+    rows.forEach((r) => { tcCount[r.tc] = (tcCount[r.tc] || 0) + 1; });
+    const mainTc = Object.keys(tcCount).sort((a, b) => tcCount[b] - tcCount[a])[0];
+    const TC = { bullet: 'пуля', blitz: 'блиц', rapid: 'рапид', daily: 'по переписке' };
+    const ratings = rows.filter((r) => r.tc === mainTc && r.rating).sort((a, b) => a.end - b.end).map((r) => r.rating);
+    if (ratings.length > 1) {
+      const diff = ratings[ratings.length - 1] - ratings[0];
+      html += `<div class="stats-block"><div class="stats-title">Рейтинг (${TC[mainTc] || mainTc}): ${ratings[ratings.length - 1]} ` +
+        `<span class="${diff >= 0 ? 'res-win' : 'res-loss'}">${diff >= 0 ? '+' : ''}${diff}</span></div>${sparkline(ratings)}</div>`;
+    }
+  }
+  if (hist.length) {
+    const avg = averageAccuracy(hist.map((x) => x.acc));
+    html += `<div class="stats-block"><div class="stats-title">Твоя точность в разобранных партиях: ${avg.toFixed(1)}%</div>` +
+      sparkline(hist.map((x) => Math.round(x.acc))) +
+      hist.slice(-5).reverse().map((x) => `<div class="stats-row"><span>${x.date} vs ${x.opp || '?'}</span><span>${x.acc.toFixed(1)}%</span></div>`).join('') + '</div>';
+  } else {
+    html += '<p class="hint">Точность появится после анализа своих партий.</p>';
+  }
+  tabStats.innerHTML = html;
 }
 
 // ---------- Event wiring ----------
@@ -1136,3 +1645,6 @@ voiceSelect.addEventListener('change', () => stopSpeech());
 
 // ---------- Init ----------
 drawBoard(new Chess().fen(), { flip: false });
+try { usernameInput.value = localStorage.getItem('chess-username') || ''; } catch (e) { /* ignore */ }
+renderTrainerTab();
+renderStats();

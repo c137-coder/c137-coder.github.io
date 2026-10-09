@@ -40,7 +40,9 @@
       </label>
       <select id="voiceSelect" title="Голос"></select>
     </div>
+    <div class="board-hint" id="boardHint">💡 Нажми на фигуру на доске, чтобы попробовать свой ход</div>
     <div class="move-comment" id="moveComment"></div>
+    <div class="explore-bar hidden" id="exploreBar"></div>
   </section>
 
   <section class="side-col">
@@ -48,11 +50,13 @@
       <div class="tabs">
         <button class="tab-btn active" data-tab="tabUser">По нику chess.com</button>
         <button class="tab-btn" data-tab="tabPgn">Вставить PGN</button>
+        <button class="tab-btn" data-tab="tabTrainer" id="trainerTabBtn">Тренажёр</button>
+        <button class="tab-btn" data-tab="tabStats">Статистика</button>
       </div>
 
       <div class="tab-content" id="tabUser">
         <div class="row">
-          <input type="text" id="usernameInput" placeholder="ник на chess.com" value="gryaznov-lev">
+          <input type="text" id="usernameInput" placeholder="ник на chess.com">
           <button id="btnLoadGames">Загрузить партии</button>
         </div>
         <div class="hint" id="userHint"></div>
@@ -63,6 +67,8 @@
         <textarea id="pgnInput" placeholder="Вставьте PGN партии сюда..."></textarea>
         <button id="btnLoadPgn">Разобрать PGN</button>
       </div>
+      <div class="tab-content hidden" id="tabTrainer"></div>
+      <div class="tab-content hidden" id="tabStats"></div>
     </div>
 
     <div class="panel" id="analysisPanel">
@@ -84,6 +90,8 @@
       <div class="opening-name hidden" id="openingName"></div>
 
       <div class="accuracy-summary hidden" id="accuracySummary"></div>
+
+      <div class="eval-graph hidden" id="evalGraph"></div>
 
       <div class="movelist" id="moveList"></div>
     </div>
