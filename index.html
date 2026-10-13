@@ -243,7 +243,7 @@
       <div class="card project">
         <div class="icon">🤖</div>
         <h2>Шагоходы</h2>
-        <p>Пошаговые бои боевых мехов, похожие на шахматы: сбей вражеского командира с короной. Снайперы, артиллерия, прыгуны и минёры, две кампании, задачи, драфт отрядов и игра с другом по коду комнаты.</p>
+        <p>Пошаговые бои боевых мехов, похожие на шахматы: сбей вражеского командира с короной. Три кампании, задача дня, драфт отрядов, ветераны и повтор боя. С другом — по коду комнаты, с таймером и зрителями.</p>
         <div class="tags"><span class="tag">Godot</span><span class="tag">GDScript</span><span class="tag">ИИ</span><span class="tag">Онлайн</span></div>
         <div class="actions">
           <a class="dl play" href="korona/index.html" target="_blank">▶ Играть в браузере<small>прямо на сайте · 64 МБ</small></a>
@@ -265,6 +265,57 @@
       </div>
     </div>
   </section>
+
+  <section class="extra">
+    <h2 class="section-title">Шагоходы: таблица рекордов</h2>
+    <div class="card">
+      <table class="lb">
+        <thead><tr><th>#</th><th>Пилот</th><th title="Победы над ИИ «Ас»">Ас</th><th title="Победы над ИИ «Ветеран» и сильнее">Ветеран</th><th title="Все победы над ИИ">Побед над ИИ</th><th title="Решено задач">Задачи</th></tr></thead>
+        <tbody id="lb-body"><tr><td colspan="6" class="lb-empty">Загружаем…</td></tr></tbody>
+      </table>
+      <div class="hint" style="margin-top:10px">Чтобы попасть в таблицу: в игре «Меню» → «Достижения» → «Таблица рекордов», впиши имя и побеждай ИИ. Обновляется сама.</div>
+    </div>
+  </section>
+  <style>
+    .lb { width: 100%; border-collapse: collapse; font-size: 15px; }
+    .lb th { color: var(--muted); font-weight: 600; text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--card-border); }
+    .lb td { padding: 7px 8px; border-bottom: 1px solid var(--card-border); color: var(--text); }
+    .lb td:nth-child(n+3), .lb th:nth-child(n+3) { text-align: right; font-variant-numeric: tabular-nums; }
+    .lb tr:first-child td:nth-child(2) { color: var(--accent); font-weight: 700; }
+    .lb-empty { color: var(--muted); text-align: center !important; }
+    @media (max-width: 560px) { .lb th:nth-child(6), .lb td:nth-child(6) { display: none; } }
+  </style>
+  <script src="https://unpkg.com/mqtt@5.10.1/dist/mqtt.min.js"></script>
+  <script>
+  // Таблица рекордов «Шагоходов»: игра публикует записи в бесплатный MQTT-брокер (retain), здесь — читаем и показываем.
+  (function () {
+    const body = document.getElementById('lb-body');
+    const rows = {};
+    const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+    function render() {
+      const list = Object.values(rows).sort((a, b) =>
+        (b.ace || 0) - (a.ace || 0) || (b.veteran || 0) - (a.veteran || 0) || (b.ai || 0) - (a.ai || 0) || (b.wins || 0) - (a.wins || 0));
+      body.innerHTML = list.length ? list.slice(0, 20).map((d, k) =>
+        `<tr><td>${k + 1}</td><td>${esc(d.name).slice(0, 16)}</td><td>${d.ace | 0}</td><td>${d.veteran | 0}</td><td>${d.ai | 0}</td><td>${d.puzzles | 0}</td></tr>`).join('')
+        : '<tr><td colspan="6" class="lb-empty">Пока пусто — стань первым!</td></tr>';
+    }
+    if (!window.mqtt) { body.innerHTML = '<tr><td colspan="6" class="lb-empty">Таблица не загрузилась.</td></tr>'; return; }
+    const brokers = ['wss://broker.emqx.io:8084/mqtt', 'wss://broker.hivemq.com:8884/mqtt'];
+    let k = 0;
+    function connect() {
+      const c = mqtt.connect(brokers[k], { clean: true, connectTimeout: 6000, reconnectPeriod: 0 });
+      let ok = false;
+      c.on('connect', () => { ok = true; c.subscribe('shagohody-korona/v1/_leaders/#'); setTimeout(render, 2500); });
+      c.on('message', (topic, msg) => {
+        const id = topic.split('/').pop();
+        try { const d = JSON.parse(msg.toString()); if (d && d.name) rows[id] = d; else delete rows[id]; } catch (e) { delete rows[id]; }
+        render();
+      });
+      c.on('close', () => { if (!ok && ++k < brokers.length) connect(); else if (!ok) body.innerHTML = '<tr><td colspan="6" class="lb-empty">Нет связи с сервером таблицы.</td></tr>'; });
+    }
+    connect();
+  })();
+  </script>
 
   <section class="extra">
     <h2 class="section-title">Мини-игра: Змейка</h2>
