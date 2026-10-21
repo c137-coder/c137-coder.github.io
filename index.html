@@ -3,7 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Лев</title>
+<title>Лев Грязнов</title>
+<meta name="description" content="Грязнов Лев Максимович: делаю сайты, небольшие программы и игры. Заказы — в Telegram @daftpand.">
 <style>
   :root {
     --bg1: #1d1930;
@@ -62,7 +63,7 @@
     animation: float 4s ease-in-out infinite;
   }
   @keyframes float { 50% { transform: translateY(-8px); } }
-  h1 { font-size: 56px; margin: 0; letter-spacing: 1px; }
+  h1 { font-size: clamp(34px, 7vw, 56px); margin: 0; letter-spacing: 1px; }
   .tagline { color: var(--muted); font-size: 18px; margin-top: 8px; }
   .chips { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; margin-top: 20px; }
   .chip {
@@ -105,6 +106,12 @@
   .dl small { display: block; font-weight: 400; font-size: 12px; opacity: .75; }
   .hint { font-size: 12px; color: var(--muted); text-align: center; }
   .project .repo:hover { text-decoration: underline; }
+  .project .shot { width: 100%; border-radius: 12px; margin: 4px 0 12px; border: 1px solid var(--card-border); }
+
+  section.hire { margin-top: 48px; }
+  .hire .lead { text-align: center; color: var(--muted); margin: -6px auto 20px; max-width: 620px; line-height: 1.5; }
+  .hire .steps { margin: 0; padding-left: 20px; color: var(--text); line-height: 1.7; }
+  .hire .cta { display: flex; justify-content: center; margin-top: 22px; }
 
   .links { display: flex; justify-content: center; gap: 14px; flex-wrap: wrap; margin-top: 40px; }
   .btn {
@@ -154,12 +161,13 @@
 <main>
   <header>
     <div class="avatar">♞</div>
-    <h1>Лев</h1>
-    <div class="tagline">12 лет · люблю думать, играть и делать своё</div>
+    <h1>Грязнов Лев Максимович</h1>
+    <div class="tagline">12 лет · делаю сайты, программы и игры</div>
     <div class="chips">
       <span class="chip">♟ шахматы</span>
       <span class="chip">✨ вайбкодинг</span>
       <span class="chip">🎮 игры</span>
+      <a class="chip" href="#hire" style="color: inherit; text-decoration: none">💼 беру заказы</a>
     </div>
   </header>
 
@@ -194,7 +202,7 @@
   <section class="about">
     <div class="card">
       <h2>Обо мне</h2>
-      <p>Привет! Я Лев. Мне нравится, когда надо подумать: в шахматах, в олимпиадных задачах и в коде. Эта страничка — тоже мой проект.</p>
+      <p>Привет! Я Лев Грязнов. Мне нравится, когда надо подумать: в шахматах, в олимпиадных задачах и в коде. Эта страничка — тоже мой проект. Ниже — то, что я уже сделал, а если нужен свой сайт или программа — <a href="#hire" style="color: var(--accent)">пиши</a>.</p>
     </div>
   </section>
 
@@ -262,6 +270,65 @@
           <a class="dl" href="https://github.com/c137-coder/Analysis-of-chess-games/archive/refs/heads/main.zip">⬇ Скачать код<small>zip с GitHub</small></a>
           <a class="repo" href="https://github.com/c137-coder/Analysis-of-chess-games" target="_blank" rel="noopener">Код на GitHub →</a>
         </div>
+      </div>
+      <div class="card project">
+        <div class="icon">🥷</div>
+        <h2>Ниндзя-палец</h2>
+        <p>Режь фрукты пальцем в воздухе! Веб-камера находит руку, и кончик указательного пальца становится мечом. Комбо, бомбы, три жизни и звуки. Есть версия для Android.</p>
+        <div class="tags"><span class="tag">JavaScript</span><span class="tag">MediaPipe</span><span class="tag">Android</span></div>
+        <div class="actions">
+          <a class="dl play" href="ninja/index.html" target="_blank">▶ Играть в браузере<small>нужна веб-камера, можно и мышкой</small></a>
+        </div>
+      </div>
+      <div class="card project">
+        <div class="icon">🗝</div>
+        <h2>Генератор подземелий</h2>
+        <img class="shot" src="img/dungeon.jpg" alt="Подземелье с шипами и рыцарем" loading="lazy">
+        <p>Каждый раз новая карта из комнат и коридоров, шипы-ловушки и три сердца. А ещё нейросеть, которая сама научилась проходить подземелья: на экзамене — 95%.</p>
+        <div class="tags"><span class="tag">Unity</span><span class="tag">C#</span><span class="tag">Python</span><span class="tag">нейросеть</span></div>
+      </div>
+      <div class="card project">
+        <div class="icon">⛏</div>
+        <h2>Мод для Minecraft: живые NPC</h2>
+        <p>С жителями деревни можно разговаривать своими словами — отвечает языковая модель. Четыре персонажа со своим характером, задания, торговля и сюжетная глава «Кривой Брод».</p>
+        <div class="tags"><span class="tag">Java</span><span class="tag">Forge 1.20.1</span><span class="tag">ИИ</span></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="hire" id="hire">
+    <h2 class="section-title">Заказать сайт или программу</h2>
+    <p class="lead">Делаю небольшие проекты вместе с ИИ: придумываем, собираем и доводим до рабочего вида. Честно говорю, что получится, а что нет.</p>
+    <div class="grid">
+      <div class="card">
+        <div class="icon">🌐</div>
+        <h2>Сайт-визитка</h2>
+        <p>Одна красивая страница: о тебе, твоём кружке, кафе или мастерской, с фото и контактами. Работает на компьютере и телефоне.</p>
+      </div>
+      <div class="card">
+        <div class="icon">🛠</div>
+        <h2>Небольшая программа</h2>
+        <p>Калькулятор, тренажёр, таблица, бот или помощник для конкретной задачи.</p>
+      </div>
+      <div class="card">
+        <div class="icon">🎮</div>
+        <h2>Мини-игра</h2>
+        <p>Простая игра для браузера: для праздника, урока или просто так.</p>
+      </div>
+    </div>
+    <div class="card" style="margin-top: 18px">
+      <h2>Как это работает</h2>
+      <ol class="steps">
+        <li>Пишешь в Telegram, что нужно.</li>
+        <li>Обсуждаем, что получится, сроки и цену.</li>
+        <li>Показываю первую версию и правлю по замечаниям.</li>
+        <li>Отдаю готовый проект.</li>
+      </ol>
+      <div class="cta">
+        <a class="btn" href="https://t.me/daftpand" target="_blank" rel="noopener">
+          <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M21.9 4.3 18.8 19c-.2 1-.8 1.3-1.7.8l-4.6-3.4-2.2 2.1c-.2.2-.5.5-1 .5l.3-4.7 8.6-7.8c.4-.3-.1-.5-.6-.2L7 12.9l-4.6-1.4c-1-.3-1-1 .2-1.5L20.5 3c.8-.3 1.6.2 1.4 1.3Z"/></svg>
+          Написать в Telegram @daftpand
+        </a>
       </div>
     </div>
   </section>
@@ -339,6 +406,10 @@
   </section>
 
   <div class="links">
+    <a class="btn" href="https://t.me/daftpand" target="_blank" rel="noopener">
+      <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M21.9 4.3 18.8 19c-.2 1-.8 1.3-1.7.8l-4.6-3.4-2.2 2.1c-.2.2-.5.5-1 .5l.3-4.7 8.6-7.8c.4-.3-.1-.5-.6-.2L7 12.9l-4.6-1.4c-1-.3-1-1 .2-1.5L20.5 3c.8-.3 1.6.2 1.4 1.3Z"/></svg>
+      Telegram
+    </a>
     <a class="btn" href="https://steamcommunity.com/profiles/76561199405354344" target="_blank" rel="noopener">
       <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="12" cy="12" r="10" opacity=".25"/><circle cx="15.5" cy="9" r="3"/><circle cx="8.5" cy="15" r="2.2"/><path d="M8.5 15 15.5 9" stroke="currentColor" stroke-width="2"/></svg>
       Мой Steam

@@ -1,0 +1,684 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<title>Ниндзя-палец</title>
+<style>
+  :root {
+    --bg: #0d0f1a;
+    --text: #f4f4f8;
+    --muted: #a3a7c2;
+    --accent: #5ef0c8;
+    --danger: #ff5d6c;
+    --panel: rgba(13, 15, 26, 0.82);
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
+    font-family: system-ui, "Segoe UI", sans-serif; overflow: hidden;
+    touch-action: none; overscroll-behavior: none; -webkit-user-select: none; user-select: none; }
+  /* видео камеры показывает сам браузер (это дёшево), а холст с игрой прозрачный и лежит сверху */
+  canvas, video { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+  video { object-fit: cover; opacity: 0.35; visibility: hidden; }
+  video.on { visibility: visible; }
+  video.mirror { transform: scaleX(-1); }
+  #perf { position: fixed; left: max(16px, env(safe-area-inset-left, 0px));
+    bottom: calc(8px + env(safe-area-inset-bottom, 0px)); font-size: 12px; color: var(--muted);
+    pointer-events: none; font-variant-numeric: tabular-nums; }
+  #hud { position: fixed; top: calc(12px + env(safe-area-inset-top, 0px));
+    left: max(16px, env(safe-area-inset-left, 0px)); right: max(16px, env(safe-area-inset-right, 0px));
+    display: flex; justify-content: space-between;
+    font-size: 28px; font-weight: 700; pointer-events: none; text-shadow: 0 2px 6px #000; }
+  #screen { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; padding: 16px; }
+  #screen.hidden { display: none; }
+  .card { background: var(--panel); border: 1px solid #ffffff22; border-radius: 16px; padding: 24px 28px;
+    max-width: 520px; text-align: center; }
+  .card h1 { margin: 0 0 8px; font-size: clamp(30px, 9vw, 40px); color: var(--accent); }
+  .buttons { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin-top: 14px; }
+  .card p { margin: 8px 0; color: var(--muted); font-size: 17px; line-height: 1.4; }
+  .card b { color: var(--text); }
+  button { font: inherit; font-size: 18px; font-weight: 700; padding: 10px 22px; border-radius: 10px;
+    border: 0; background: var(--accent); color: #062018; cursor: pointer; }
+  button.secondary { background: #ffffff1a; color: var(--text); }
+  button:focus-visible { outline: 3px solid #fff; outline-offset: 2px; }
+  #status { font-size: 15px; color: var(--muted); min-height: 1.4em; }
+  #sound { position: fixed; right: max(16px, env(safe-area-inset-right, 0px));
+    bottom: calc(8px + env(safe-area-inset-bottom, 0px)); padding: 6px 12px; font-size: 22px;
+    background: #ffffff1a; color: var(--text); }
+</style>
+</head>
+<body>
+<video id="video" playsinline muted></video>
+<canvas id="canvas"></canvas>
+<div id="hud"><span id="score">0</span><span id="lives"></span></div>
+<div id="perf"></div>
+<button id="sound" aria-label="Звук">🔊</button>
+<div id="screen">
+  <div class="card">
+    <h1>Ниндзя-палец</h1>
+    <p>Камера видит твою руку как <b>палочки</b>. Кончик <b>указательного пальца</b> — это меч.</p>
+    <p>Руби фрукты резким движением. Не задевай 💣 и не пропускай фрукты — у тебя 3 жизни.</p>
+    <p>Разрежь <b>3 фрукта и больше</b> одним взмахом — это <b>комбо</b> и бонусные очки.</p>
+    <p>На телефоне поставь его вертикально, чтобы рука помещалась в камеру. Без камеры можно резать пальцем по экрану или мышкой.</p>
+    <p id="status">Загружаю распознавание руки…</p>
+    <div class="buttons">
+      <button id="start" disabled>Играть с камерой</button>
+      <button id="flip" class="secondary">Камера: передняя</button>
+      <button id="mouse" class="secondary">Без камеры</button>
+    </div>
+  </div>
+</div>
+<script type="module">
+// ---------------------------------------------------------------- настройки игры (крути их)
+const GRAVITY = 1400;        // сила тяжести, пикселей/с²
+const SLICE_SPEED = 0.6;     // палец должен двигаться быстрее (экранов в секунду), чтобы резать
+const BOMB_CHANCE = 0.18;    // доля бомб среди летящих предметов
+const LIVES = 3;
+const FRUITS = ["🍉", "🍊", "🍎", "🍌", "🍍", "🍓", "🥝", "🍑"];
+const TRAIL_TIME = 0.15;     // сколько секунд держится след меча
+const FRUIT_SIZE = { phone: 0.2, computer: 0.13 }; // размер фрукта: доля от короткой стороны экрана
+const COMBO_WINDOW = 0.35;   // фрукты, разрезанные с паузой меньше этой (секунды), идут в одно комбо
+const COMBO_MIN = 3;         // с какого числа фруктов комбо даёт бонус (бонус = числу фруктов)
+
+// Палочки руки: пары точек MediaPipe (0 — запястье, 4 — большой палец, 8 — указательный...)
+const BONES = [[0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],[5,9],[9,10],[10,11],[11,12],
+               [9,13],[13,14],[14,15],[15,16],[13,17],[0,17],[17,18],[18,19],[19,20]];
+const TIP = 8;
+const PHONE = matchMedia("(pointer: coarse)").matches;
+const NUM_HANDS = PHONE ? 1 : 2;           // одну руку телефон ищет заметно быстрее
+const MAX_DPR = PHONE ? 1.5 : 2;           // чёткость холста: выше — красивее, но медленнее
+const DETECT_WIDTH = 480;                  // до какой ширины уменьшать кадр перед поиском руки
+
+const canvas = document.getElementById("canvas");
+const ctx = canvas.getContext("2d");
+const video = document.getElementById("video");
+const $ = (id) => document.getElementById(id);
+
+let W = 0, H = 0, DPR = 1;
+const sprites = new Map(); // эмодзи, уже нарисованные в нужном размере: копировать картинку быстрее, чем рисовать текст
+function resize() {
+  const dpr = Math.min(window.devicePixelRatio || 1, MAX_DPR);
+  DPR = dpr;
+  sprites.clear();
+  W = window.innerWidth; H = window.innerHeight;
+  canvas.width = W * dpr; canvas.height = H * dpr;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+addEventListener("resize", resize);
+resize();
+
+let best = 0;
+try { best = Number(localStorage.getItem("finger-ninja-best")) || 0; } catch {}
+
+// ---------------------------------------------------------------- звуки
+// Все звуки собираются из шума и простых тонов прямо в браузере (Web Audio) — файлы не нужны.
+const sound = { ctx: null, on: true, noise: null };
+try { sound.on = localStorage.getItem("finger-ninja-sound") !== "off"; } catch {}
+
+// Браузер разрешает звук только после нажатия, поэтому audio() вызываем и в обработчиках кнопок.
+function audio() {
+  if (!sound.on) return null;
+  if (!sound.ctx) {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return null;
+    sound.ctx = new AC();
+  }
+  if (sound.ctx.state === "suspended") sound.ctx.resume().catch(() => {});
+  return sound.ctx;
+}
+
+// Тон: частота плавно идёт от f0 к f1, громкость затухает за dur секунд.
+function tone(ac, { type = "sine", f0, f1 = f0, start = 0, dur, vol }) {
+  const t = ac.currentTime + start;
+  const o = ac.createOscillator(), g = ac.createGain();
+  o.type = type;
+  o.frequency.setValueAtTime(f0, t);
+  o.frequency.exponentialRampToValueAtTime(f1, t + dur);
+  g.gain.setValueAtTime(vol, t);
+  g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+  o.connect(g).connect(ac.destination);
+  o.start(t);
+  o.stop(t + dur + 0.02);
+}
+
+// Шум через фильтр: «вжух», «чвак», взрыв.
+function noise(ac, { filter = "bandpass", f0, f1 = f0, q = 1, start = 0, dur, vol }) {
+  if (!sound.noise) {
+    sound.noise = ac.createBuffer(1, ac.sampleRate, ac.sampleRate);
+    const d = sound.noise.getChannelData(0);
+    for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+  }
+  const t = ac.currentTime + start;
+  const src = ac.createBufferSource(), f = ac.createBiquadFilter(), g = ac.createGain();
+  src.buffer = sound.noise;
+  f.type = filter;
+  f.Q.value = q;
+  f.frequency.setValueAtTime(f0, t);
+  f.frequency.exponentialRampToValueAtTime(f1, t + dur);
+  g.gain.setValueAtTime(vol, t);
+  g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+  src.connect(f).connect(g).connect(ac.destination);
+  src.start(t, Math.random() * 0.5);
+  src.stop(t + dur + 0.02);
+}
+
+const NOTES = [523, 659, 784, 1047, 1319, 1568, 2093]; // до-ми-соль вверх
+const sfx = {
+  swish() { const ac = audio(); if (ac) noise(ac, { f0: 700, f1: 3500, q: 0.8, dur: 0.14, vol: 0.6 }); },
+  // n — какой по счёту фрукт в комбо: каждый следующий звучит выше
+  slice(n) {
+    const ac = audio(); if (!ac) return;
+    noise(ac, { filter: "highpass", f0: 2500, dur: 0.07, vol: 0.3 });
+    noise(ac, { filter: "lowpass", f0: 900, f1: 200, dur: 0.18, vol: 0.35 });
+    const f = 330 * 2 ** (Math.min(n - 1, 12) / 6);
+    tone(ac, { type: "triangle", f0: f, f1: f * 1.5, dur: 0.12, vol: 0.12 });
+  },
+  combo(n) {
+    const ac = audio(); if (!ac) return;
+    for (let i = 0; i < Math.min(n, NOTES.length); i++) {
+      tone(ac, { type: "triangle", f0: NOTES[i], start: i * 0.07, dur: 0.25, vol: 0.18 });
+    }
+  },
+  bomb() {
+    const ac = audio(); if (!ac) return;
+    noise(ac, { filter: "lowpass", f0: 1500, f1: 80, dur: 0.9, vol: 0.55 });
+    tone(ac, { f0: 110, f1: 35, dur: 0.7, vol: 0.4 });
+  },
+  miss() { const ac = audio(); if (ac) tone(ac, { type: "square", f0: 220, f1: 130, dur: 0.25, vol: 0.12 }); },
+  start() {
+    const ac = audio(); if (!ac) return;
+    tone(ac, { type: "triangle", f0: 523, start: 0, dur: 0.15, vol: 0.15 });
+    tone(ac, { type: "triangle", f0: 784, start: 0.1, dur: 0.25, vol: 0.15 });
+  },
+  over() {
+    const ac = audio(); if (!ac) return;
+    [392, 330, 262].forEach((f, i) => tone(ac, { type: "triangle", f0: f, start: 0.3 + i * 0.18, dur: 0.3, vol: 0.15 }));
+  },
+};
+
+function showSoundButton() { $("sound").textContent = sound.on ? "🔊" : "🔇"; }
+showSoundButton();
+$("sound").addEventListener("click", () => {
+  sound.on = !sound.on;
+  try { localStorage.setItem("finger-ninja-sound", sound.on ? "on" : "off"); } catch {}
+  showSoundButton();
+  if (sound.on) sfx.swish();
+});
+
+// ---------------------------------------------------------------- состояние
+const game = { running: false, score: 0, lives: LIVES, items: [], pieces: [], splashes: [], spawnIn: 1, time: 0,
+  combo: 0, comboAt: 0, comboX: 0, comboY: 0 };
+const blades = [[], []];     // след каждой руки: [{x, y, t}]
+let hands = [];              // палочки рук на экране: массивы из 21 точки {x, y}
+let mode = null;             // "camera" или "mouse" (мышь или палец по экрану)
+let facing = "user";         // "user" — передняя камера (зеркалим), "environment" — задняя
+let wakeLock = null;
+let landmarker = null;
+window.ninja = { game, blades, sound, sfx, get hands() { return hands; }, get mode() { return mode; },
+  get engine() { return worker ? "worker" : landmarker ? "main" : "none"; },
+  addBladePoint: (...args) => addBladePoint(...args) }; // для проверок
+
+// ---------------------------------------------------------------- распознавание руки
+// Руку ищем в отдельном потоке (Web Worker), чтобы игра рисовалась плавно, пока он думает.
+// Если поток не завёлся — ищем в основном, как раньше.
+const WORKER_SOURCE = `
+let landmarker = null;
+self.onmessage = async (e) => {
+  const m = e.data;
+  if (m.type === "init") {
+    try {
+      self.exports = {};
+      // .cjs сервер отдаёт не как JavaScript, и importScripts его не берёт — грузим текст и запускаем сами
+      const code = await (await fetch(m.lib + "/vision_bundle.cjs")).text();
+      importScripts(URL.createObjectURL(new Blob([code], { type: "text/javascript" })));
+      const { HandLandmarker, FilesetResolver } = self.exports;
+      const files = await FilesetResolver.forVisionTasks(m.lib + "/wasm");
+      const options = (delegate) => ({ baseOptions: { modelAssetPath: m.model, delegate },
+                                       runningMode: "VIDEO", numHands: m.numHands });
+      // в потоке считаем процессором: видеокарта внутри потока на части телефонов зависает,
+      // а процессор здесь никому не мешает — рисование идёт в основном потоке
+      landmarker = await HandLandmarker.createFromOptions(files, options("CPU"));
+      postMessage({ type: "ready" });
+    } catch (err) {
+      postMessage({ type: "error", message: String((err && err.message) || err) });
+    }
+  } else if (m.type === "frame") {
+    let landmarks = [], error = null;
+    try { landmarks = landmarker.detectForVideo(m.bitmap, m.time).landmarks; }
+    catch (err) { error = String((err && err.message) || err); }
+    m.bitmap.close();
+    postMessage({ type: "hands", landmarks, time: m.time, error });
+  }
+};`;
+
+function assetUrls() {
+  // В Android-приложении всё лежит внутри него (работает без интернета), в браузере — берём из интернета.
+  const inApp = location.hostname === "appassets.androidplatform.net";
+  const lib = inApp ? new URL("/mediapipe", location.href).href : "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14";
+  const model = inApp ? new URL("/mediapipe/hand_landmarker.task", location.href).href
+    : "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task";
+  return { lib, model };
+}
+
+let worker = null;
+let workerBusy = false;   // кадр уже в работе — следующий не шлём, чтобы не копить очередь
+let workerSentAt = 0;
+let workerErrors = 0;
+
+function loadWorker() {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(new Blob([WORKER_SOURCE], { type: "text/javascript" }));
+    const w = new Worker(url);
+    const timer = setTimeout(() => { w.terminate(); reject(new Error("поток не ответил")); }, 60000);
+    w.onerror = (e) => { clearTimeout(timer); w.terminate(); reject(e); };
+    w.onmessage = (e) => {
+      if (e.data.type === "ready") { clearTimeout(timer); w.onmessage = onWorkerMessage; resolve(w); }
+      else if (e.data.type === "error") { clearTimeout(timer); w.terminate(); reject(new Error(e.data.message)); }
+    };
+    w.postMessage({ type: "init", ...assetUrls(), numHands: NUM_HANDS });
+  });
+}
+
+function onWorkerMessage(e) {
+  if (e.data.type !== "hands") return;
+  workerBusy = false;
+  if (e.data.error && workerErrors++ < 3) console.warn("Поток: ошибка распознавания:", e.data.error);
+  if (mode === "camera") applyHands(e.data.landmarks, e.data.time);
+}
+
+async function loadLandmarker() {
+  const { lib, model } = assetUrls();
+  const { HandLandmarker, FilesetResolver } = await import(lib + "/vision_bundle.mjs");
+  const files = await FilesetResolver.forVisionTasks(lib + "/wasm");
+  const options = (delegate) => ({
+    baseOptions: { modelAssetPath: model, delegate },
+    runningMode: "VIDEO",
+    numHands: NUM_HANDS,
+  });
+  try {
+    return await HandLandmarker.createFromOptions(files, options("GPU"));
+  } catch {
+    return await HandLandmarker.createFromOptions(files, options("CPU"));
+  }
+}
+
+loadWorker().then((w) => { worker = w; }).catch((e) => {
+  console.warn("Поток для руки не завёлся, ищу руку в основном:", e);
+  return loadLandmarker().then((l) => { landmarker = l; });
+}).then(() => {
+  console.info("Распознавание руки работает: " + (worker ? "в отдельном потоке" : "в основном потоке"));
+  $("status").textContent = "Готово! Нажми «Играть с камерой» и разреши доступ к камере.";
+  $("start").disabled = false;
+}).catch((e) => {
+  console.error(e);
+  $("status").textContent = "Не удалось загрузить распознавание (нужен интернет). Можно играть мышкой.";
+});
+
+function stopCamera() {
+  video.srcObject?.getTracks().forEach((t) => t.stop());
+  video.srcObject = null;
+  video.classList.remove("on");
+}
+
+async function startCamera() {
+  if (!navigator.mediaDevices?.getUserMedia) {
+    $("status").textContent = "Камера работает только на сайте с адресом https:// (или в файле на компьютере).";
+    return;
+  }
+  $("status").textContent = "Включаю камеру…";
+  try {
+    stopCamera();
+    const phone = matchMedia("(pointer: coarse)").matches;
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: facing, width: { ideal: phone ? 640 : 1280 }, height: { ideal: phone ? 480 : 720 } },
+      audio: false,
+    });
+    video.srcObject = stream;
+    await video.play();
+    video.classList.add("on");
+    video.classList.toggle("mirror", mirrored());
+    mode = "camera";
+    startGame();
+  } catch (e) {
+    console.error(e);
+    $("status").textContent = "Камера не включилась: " + (e.name === "NotAllowedError"
+      ? "доступ запрещён — разреши камеру в адресной строке." : "её нет или она занята другой программой.");
+  }
+}
+
+// Прямоугольник, куда рисуем видео (как object-fit: cover), и перевод точки камеры в экран. Зеркалим, как в зеркале.
+function videoRect() {
+  const vw = video.videoWidth || 16, vh = video.videoHeight || 9;
+  const s = Math.max(W / vw, H / vh);
+  return { x: (W - vw * s) / 2, y: (H - vh * s) / 2, w: vw * s, h: vh * s };
+}
+function mirrored() {
+  return facing === "user";
+}
+function toScreen(p, r) {
+  return { x: r.x + (mirrored() ? 1 - p.x : p.x) * r.w, y: r.y + p.y * r.h };
+}
+
+let lastVideoTime = -1;
+let handUpdates = 0;
+function trackHands(now) {
+  if (mode !== "camera" || video.readyState < 2 || video.currentTime === lastVideoTime) return;
+  if (worker) {
+    if (workerBusy) {
+      if (now - workerSentAt > 2000) switchToMainThread("поток не отвечает 2 секунды");
+      return;
+    }
+    lastVideoTime = video.currentTime;
+    workerBusy = true;
+    workerSentAt = now;
+    const scale = Math.min(1, DETECT_WIDTH / (video.videoWidth || DETECT_WIDTH));
+    const time = performance.now();
+    createImageBitmap(video, { resizeWidth: Math.round(video.videoWidth * scale),
+                               resizeHeight: Math.round(video.videoHeight * scale) })
+      .then((bitmap) => worker.postMessage({ type: "frame", bitmap, time }, [bitmap]))
+      .catch((err) => {
+        workerBusy = false;
+        if (workerErrors++ < 3) console.warn("Не получилось взять кадр с камеры:", err);
+        if (workerErrors > 30) switchToMainThread("кадры с камеры не передаются в поток");
+      });
+    return;
+  }
+  if (!landmarker) return;
+  lastVideoTime = video.currentTime;
+  let result;
+  try {
+    result = landmarker.detectForVideo(video, now);
+  } catch (e) {
+    console.error(e); // сбой распознавания на одном кадре не должен останавливать игру
+    return;
+  }
+  applyHands(result.landmarks, now);
+}
+
+// Запасной путь: поток сломался — ищем руку в основном потоке (медленнее, но работает).
+let switching = false;
+function switchToMainThread(reason) {
+  if (switching) return;
+  switching = true;
+  console.warn("Перехожу на распознавание в основном потоке:", reason);
+  worker?.terminate();
+  worker = null;
+  workerBusy = false;
+  loadLandmarker().then((l) => { landmarker = l; console.info("Распознавание руки работает: в основном потоке"); })
+    .catch((e) => console.error("Распознавание руки не работает:", e));
+}
+
+// Точки руки из камеры → палочки на экране и новая точка следа меча.
+function applyHands(landmarks, time) {
+  const r = videoRect();
+  hands = landmarks.map((pts) => pts.map((p) => toScreen(p, r)));
+  hands.slice(0, 2).forEach((h, i) => addBladePoint(i, h[TIP].x, h[TIP].y, time / 1000));
+  handUpdates++;
+}
+
+// ---------------------------------------------------------------- мышь (запасной вариант)
+addEventListener("pointermove", (e) => { if (mode === "mouse") addBladePoint(0, e.clientX, e.clientY); });
+addEventListener("pointerdown", (e) => { if (mode === "mouse") blades[0].length = 0; });
+
+// t — когда снят кадр (по нему считаем скорость взмаха), seen — когда точка дошла до игры (по нему — сколько жить следу).
+// На телефоне распознавание занимает 0,1–0,3 с: если считать жизнь следа от съёмки, точка приходит уже «просроченной».
+function addBladePoint(i, x, y, t = performance.now() / 1000) {
+  blades[i].push({ x, y, t, seen: performance.now() / 1000 });
+}
+
+// ---------------------------------------------------------------- игра
+function startGame() {
+  Object.assign(game, { running: true, score: 0, lives: LIVES, items: [], pieces: [], splashes: [], spawnIn: 0.8, time: 0,
+    combo: 0, comboAt: 0 });
+  $("screen").classList.add("hidden");
+  sfx.start();
+  // чтобы экран телефона не гас посреди игры (если браузер не даст — не страшно)
+  navigator.wakeLock?.request("screen").then((l) => (wakeLock = l)).catch(() => {});
+}
+
+function endGame() {
+  finishCombo();
+  game.running = false;
+  sfx.over();
+  wakeLock?.release().catch(() => {});
+  wakeLock = null;
+  if (game.score > best) {
+    best = game.score;
+    try { localStorage.setItem("finger-ninja-best", String(best)); } catch {}
+  }
+  $("status").textContent = `Счёт: ${game.score}. Рекорд: ${best}.`;
+  $("start").textContent = mode === "camera" ? "Ещё раз" : "Играть с камерой";
+  $("screen").classList.remove("hidden");
+}
+
+function spawn() {
+  const bomb = Math.random() < BOMB_CHANCE && game.time > 3;
+  const size = Math.max(64, Math.min(W, H) * (PHONE ? FRUIT_SIZE.phone : FRUIT_SIZE.computer));
+  const x = W * (0.2 + Math.random() * 0.6);
+  const peak = H * (0.15 + Math.random() * 0.3);          // как высоко взлетит
+  const vy = -Math.sqrt(2 * GRAVITY * (H + size - peak));
+  const vx = (W / 2 - x) * (0.3 + Math.random() * 0.5);
+  game.items.push({ x, y: H + size, vx, vy, r: size / 2, bomb,
+    emoji: bomb ? "💣" : FRUITS[Math.floor(Math.random() * FRUITS.length)],
+    spin: (Math.random() - 0.5) * 6, angle: 0 });
+}
+
+// Пересекает ли отрезок a→b круг (центр c, радиус r)?
+function segmentHitsCircle(a, b, c, r) {
+  const dx = b.x - a.x, dy = b.y - a.y;
+  const len2 = dx * dx + dy * dy || 1;
+  const t = Math.max(0, Math.min(1, ((c.x - a.x) * dx + (c.y - a.y) * dy) / len2));
+  const px = a.x + t * dx - c.x, py = a.y + t * dy - c.y;
+  return px * px + py * py <= r * r;
+}
+
+// Комбо: фрукты, разрезанные почти подряд, считаются вместе. Когда пауза затянулась — подводим итог.
+function addToCombo(it) {
+  game.combo = game.time - game.comboAt <= COMBO_WINDOW ? game.combo + 1 : 1;
+  game.comboAt = game.time;
+  game.comboX = it.x; game.comboY = it.y;
+  return game.combo;
+}
+function finishCombo() {
+  const n = game.combo;
+  game.combo = 0;
+  if (n < COMBO_MIN) return;
+  game.score += n;
+  const x = Math.max(120, Math.min(W - 120, game.comboX)), y = Math.max(120, game.comboY);
+  game.splashes.push({ x, y, t: 0, text: `Комбо ×${n}!`, combo: true, life: 1.3 });
+  game.splashes.push({ x, y: y + 44, t: 0, text: `+${n}`, combo: true, life: 1.3 });
+  sfx.combo(n);
+}
+
+function slice(dt) {
+  const now = performance.now() / 1000;
+  for (const blade of blades) {
+    // отрезок между точками живёт TRAIL_TIME после прихода его новой точки
+    while (blade.length >= 2 && now - blade[1].seen > TRAIL_TIME) blade.shift();
+    if (blade.length === 1 && now - blade[0].seen > TRAIL_TIME) blade.shift();
+    if (blade.length < 2) { blade.fast = false; continue; }
+    const a = blade[blade.length - 2], b = blade[blade.length - 1];
+    const speed = Math.hypot(b.x - a.x, b.y - a.y) / Math.max(b.t - a.t, 1 / 120);
+    if (speed < SLICE_SPEED * Math.min(W, H)) { blade.fast = false; continue; }
+    // «вжух» — в начале взмаха, а не каждый кадр
+    if (!blade.fast && game.running && now - (blade.swishAt || 0) > 0.2) { sfx.swish(); blade.swishAt = now; }
+    blade.fast = true;
+    for (const it of game.items) {
+      if (it.cut || !segmentHitsCircle(a, b, it, it.r)) continue;
+      it.cut = true;
+      if (it.bomb) {
+        game.lives = 0;
+        game.splashes.push({ x: it.x, y: it.y, t: 0, text: "💥", big: true });
+        sfx.bomb();
+      } else {
+        game.score += 1;
+        sfx.slice(addToCombo(it));
+        const ang = Math.atan2(b.y - a.y, b.x - a.x);
+        for (const side of [-1, 1]) {
+          game.pieces.push({ x: it.x, y: it.y, vx: it.vx + side * 160 * Math.sin(ang), vy: it.vy * 0.3 - 200,
+            r: it.r, emoji: it.emoji, side, angle: ang, spin: side * 4 });
+        }
+        game.splashes.push({ x: it.x, y: it.y, t: 0, text: "+1" });
+      }
+    }
+  }
+  game.items = game.items.filter((it) => !it.cut);
+}
+
+function update(dt) {
+  if (!game.running) return;
+  game.time += dt;
+  game.spawnIn -= dt;
+  if (game.spawnIn <= 0) {
+    const wave = 1 + Math.floor(Math.random() * Math.min(4, 1 + game.time / 15));
+    for (let i = 0; i < wave; i++) spawn();
+    game.spawnIn = Math.max(0.6, 1.6 - game.time / 60);
+  }
+  for (const it of [...game.items, ...game.pieces]) {
+    it.vy += GRAVITY * dt; it.x += it.vx * dt; it.y += it.vy * dt; it.angle += it.spin * dt;
+  }
+  slice(dt);
+  if (game.combo && game.time - game.comboAt > COMBO_WINDOW) finishCombo();
+  // упавшие вниз: фрукт пропущен — минус жизнь
+  for (const it of game.items) {
+    if (it.vy > 0 && it.y - it.r > H) {
+      it.gone = true;
+      if (!it.bomb) {
+        game.lives -= 1;
+        game.splashes.push({ x: it.x, y: H - 40, t: 0, text: "✖" });
+        if (game.lives > 0) sfx.miss();
+      }
+    }
+  }
+  game.items = game.items.filter((it) => !it.gone);
+  game.pieces = game.pieces.filter((p) => p.y - p.r < H + 50);
+  game.splashes.forEach((s) => (s.t += dt));
+  game.splashes = game.splashes.filter((s) => s.t < (s.life || 0.8));
+  if (game.lives <= 0) endGame();
+}
+
+// ---------------------------------------------------------------- рисование
+// Эмодзи размера r рисуется в отдельную картинку один раз, дальше только копируется.
+function sprite(e, r) {
+  const key = e + "|" + Math.round(r);
+  let c = sprites.get(key);
+  if (!c) {
+    const size = Math.ceil(r * 2.6 * DPR);
+    c = document.createElement("canvas");
+    c.width = c.height = size;
+    const g = c.getContext("2d");
+    g.font = `${r * 2 * DPR}px "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", sans-serif`;
+    g.textAlign = "center";
+    g.textBaseline = "middle";
+    g.fillText(e, size / 2, size / 2 + r * 0.1 * DPR);
+    sprites.set(key, c);
+  }
+  return c;
+}
+
+function drawEmoji(e, x, y, r, angle, clipSide) {
+  const s = r * 2.6;
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(angle);
+  if (clipSide) {            // половинка разрезанного фрукта
+    ctx.beginPath();
+    ctx.rect(clipSide < 0 ? -s / 2 : 0, -s / 2, s / 2, s);
+    ctx.clip();
+  }
+  ctx.drawImage(sprite(e, r), -s / 2, -s / 2, s, s);
+  ctx.restore();
+}
+
+function draw() {
+  ctx.clearRect(0, 0, W, H);
+  for (const p of game.pieces) drawEmoji(p.emoji, p.x, p.y, p.r, p.angle, p.side);
+  for (const it of game.items) drawEmoji(it.emoji, it.x, it.y, it.r, it.angle, 0);
+
+  // палочки руки: все кости одним контуром; «свечение» — та же линия пошире и полупрозрачная (размытие дорогое)
+  if (hands.length) {
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    for (const h of hands) for (const [a, b] of BONES) { ctx.moveTo(h[a].x, h[a].y); ctx.lineTo(h[b].x, h[b].y); }
+    ctx.strokeStyle = "rgba(94, 240, 200, 0.3)";
+    ctx.lineWidth = 14;
+    ctx.stroke();
+    ctx.strokeStyle = "#5ef0c8";
+    ctx.lineWidth = 5;
+    ctx.stroke();
+    ctx.beginPath();
+    for (const h of hands) for (const p of h) { ctx.moveTo(p.x + 4, p.y); ctx.arc(p.x, p.y, 4, 0, Math.PI * 2); }
+    ctx.fillStyle = "#ffffff";
+    ctx.fill();
+    ctx.beginPath();
+    for (const h of hands) { ctx.moveTo(h[TIP].x + 10, h[TIP].y); ctx.arc(h[TIP].x, h[TIP].y, 10, 0, Math.PI * 2); }
+    ctx.fillStyle = "#ffe066";
+    ctx.fill();
+  }
+
+  // след меча: чем свежее, тем толще
+  for (const blade of blades) {
+    for (let i = 1; i < blade.length; i++) {
+      const k = i / blade.length;
+      ctx.strokeStyle = `rgba(255, 240, 160, ${k})`;
+      ctx.lineWidth = 2 + 10 * k;
+      ctx.beginPath(); ctx.moveTo(blade[i - 1].x, blade[i - 1].y); ctx.lineTo(blade[i].x, blade[i].y); ctx.stroke();
+    }
+  }
+
+  for (const s of game.splashes) {
+    const life = s.life || 0.8;
+    ctx.globalAlpha = Math.min(1, 2 * (1 - s.t / life));
+    // комбо: крупно, с обводкой и «выпрыгивает» в начале
+    const pop = s.combo ? 1 + 0.4 * Math.max(0, 1 - s.t / 0.15) : 1;
+    const px = s.big ? 120 : s.combo ? Math.min(52, W / 9) * pop : 36;
+    ctx.font = `bold ${px}px system-ui, "Segoe UI Emoji", sans-serif`;
+    ctx.textAlign = "center";
+    let x = s.x;
+    if (s.combo) {
+      const half = ctx.measureText(s.text).width / 2 + 12;   // надпись целиком на экране
+      x = Math.max(half, Math.min(W - half, x));
+      ctx.lineWidth = 6;
+      ctx.strokeStyle = "#3a1500";
+      ctx.strokeText(s.text, x, s.y - s.t * 40);
+    }
+    ctx.fillStyle = s.text === "✖" ? "#ff5d6c" : s.combo ? "#ff9f1c" : "#ffe066";
+    ctx.fillText(s.text, x, s.y - s.t * (s.combo ? 40 : 60));
+    ctx.globalAlpha = 1;
+  }
+
+  $("score").textContent = game.running || game.score ? `${game.score}` : best ? `Рекорд: ${best}` : "";
+  $("lives").textContent = game.running ? "❤️".repeat(Math.max(game.lives, 0)) : "";
+}
+
+// ---------------------------------------------------------------- главный цикл
+let last = performance.now();
+let perfFrames = 0, perfStart = performance.now();
+function frame(now) {
+  const dt = Math.min((now - last) / 1000, 0.05);
+  last = now;
+  perfFrames++;
+  if (now - perfStart >= 1000) {   // счётчик в углу: кадры в секунду и как часто обновляется рука
+    const sec = (now - perfStart) / 1000;
+    $("perf").textContent = `${Math.round(perfFrames / sec)} к/с` +
+      (mode === "camera" ? ` · рука ${Math.round(handUpdates / sec)} раз/с` : "");
+    perfFrames = 0; handUpdates = 0; perfStart = now;
+  }
+  trackHands(now);
+  update(dt);
+  draw();
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+$("start").addEventListener("click", () => { audio(); mode === "camera" ? startGame() : startCamera(); });
+$("mouse").addEventListener("click", () => { audio(); stopCamera(); mode = "mouse"; hands = []; startGame(); });
+$("flip").addEventListener("click", () => {
+  facing = facing === "user" ? "environment" : "user";
+  video.classList.toggle("mirror", mirrored());
+  $("flip").textContent = facing === "user" ? "Камера: передняя" : "Камера: задняя";
+  if (mode === "camera") { mode = null; $("start").textContent = "Играть с камерой"; }
+});
+</script>
+</body>
+</html>
